@@ -1,0 +1,10 @@
+FROM golang:alpine AS builder
+RUN apk add --no-cache git
+RUN go install github.com/osrg/gobgp/v3/cmd/gobgp@latest
+RUN go install github.com/osrg/gobgp/v3/cmd/gobgpd@latest
+
+FROM alpine:latest
+COPY --from=builder /go/bin/gobgp /usr/local/bin/
+COPY --from=builder /go/bin/gobgpd /usr/local/bin/
+
+CMD ["gobgpd", "-f", "/etc/gobgp/gobgp.conf"]

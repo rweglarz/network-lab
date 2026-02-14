@@ -1,0 +1,17 @@
+[project]
+name = "network-lab"
+version = "0.1.0"
+description = "Container-based network lab tool using Podman"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pyyaml",
+    "click",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+nl = "network_lab.cli:cli"
