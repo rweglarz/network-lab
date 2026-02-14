@@ -13,7 +13,12 @@ requirements:
   - stop vwan-lab
   - restart vwan-lab
   - list containers vwan-lab
+- generate the gobgp or bird config file according to the required router type
+- if the bgp config file for the node does not exist yet, generate it. If it does, use the existing one. Add a command to force the regeneration of the file
+- the bgp config files sould be stored in "configs" folder with a subfolder for each lab
 
+cli requirements:
+- show-bgp-peers - show bgp peers in all routers in a format abstracted from underlying bgp daemon
 
 other:
 - do not add Co-Authored-By to each commit, we both know you did it

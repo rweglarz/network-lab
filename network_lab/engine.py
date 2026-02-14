@@ -1,10 +1,45 @@
+import json
 import sys
+from pathlib import Path
 
+from network_lab.bgp_config import generate_config
 from network_lab.config import LabConfig
 from network_lab.podman import Podman, PodmanError
 
 
 LABEL_KEY = "nl-lab"
+
+# Map kind name to (config mount path, daemon command)
+KIND_CONFIG = {
+    "gobgp": ("/etc/gobgp/gobgp.conf", ["gobgpd", "-f", "/etc/gobgp/gobgp.conf"]),
+    "bird": ("/etc/bird/bird.conf", ["bird", "-f"]),
+}
+
+
+def _config_dir(config: LabConfig) -> Path:
+    return Path("configs") / config.name
+
+
+def ensure_configs(config: LabConfig, force: bool = False) -> dict[str, Path]:
+    """Generate BGP configs for all routers. Returns {router_name: config_path}."""
+    config_dir = _config_dir(config)
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    paths = {}
+    for router in config.routers:
+        kind = config.kind_for_router(router.name)
+        conf_path = config_dir / f"{router.name}.conf"
+
+        if conf_path.exists() and not force:
+            print(f"  Config for {router.name} already exists, skipping.")
+        else:
+            print(f"  Generating {kind.name} config for {router.name}...")
+            content = generate_config(config, router)
+            conf_path.write_text(content)
+
+        paths[router.name] = conf_path.resolve()
+
+    return paths
 
 
 def start(config: LabConfig) -> None:
@@ -19,6 +54,10 @@ def start(config: LabConfig) -> None:
         net_name = config.network_name(i)
         for peer in link.peers:
             router_networks[peer.router].append((net_name, {"interface": peer.interface, "ip": peer.ip}))
+
+    # Generate BGP configs (only if missing)
+    print("Generating BGP configs...")
+    config_paths = ensure_configs(config)
 
     # Create link networks (L2 only — no IPAM, internal, no DNS)
     for i, link in enumerate(config.links):
@@ -40,6 +79,16 @@ def start(config: LabConfig) -> None:
     for router in config.routers:
         container_name = config.container_name(router.name)
         image = config.image_for_router(router.name)
+        kind = config.kind_for_router(router.name)
+
+        # Mount config and set daemon command
+        kind_conf = KIND_CONFIG.get(kind.name)
+        volumes = []
+        command = ["sleep", "infinity"]
+        if kind_conf:
+            mount_path, command = kind_conf
+            host_path = config_paths[router.name]
+            volumes = [f"{host_path}:{mount_path}:ro,Z"]
 
         print(f"Starting container {container_name}...")
         try:
@@ -50,7 +99,8 @@ def start(config: LabConfig) -> None:
                 labels=lab_labels,
                 cap_add=["NET_ADMIN"],
                 network=mgmt_net,
-                command=["sleep", "infinity"],
+                volumes=volumes,
+                command=command,
             )
         except PodmanError as e:
             print(f"  Error: {e}", file=sys.stderr)
@@ -131,3 +181,85 @@ def list_containers(lab_name: str) -> None:
         status = c.get("State", "unknown")
         image = c.get("Image", "unknown")
         print(f"{name:<35} {status:<20} {image:<30}")
+
+
+# gobgp session_state mapping
+_GOBGP_STATES = {
+    0: "idle", 1: "active", 2: "connect", 3: "opensent",
+    4: "openconfirm", 5: "established", 6: "established",
+}
+
+
+def _parse_gobgp_peers(output: str) -> list[dict]:
+    """Parse gobgp -j neighbor JSON output into unified peer dicts."""
+    peers = []
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        return peers
+    for entry in data:
+        state = entry.get("state", {})
+        session_state = _GOBGP_STATES.get(state.get("session_state", 0), "unknown")
+        peers.append({
+            "neighbor": state.get("neighbor_address", "?"),
+            "remote_asn": state.get("peer_asn", 0),
+            "state": session_state,
+        })
+    return peers
+
+
+def _parse_bird_peers(output: str) -> list[dict]:
+    """Parse 'birdc show protocols' output into unified peer dicts."""
+    peers = []
+    for line in output.splitlines():
+        parts = line.split()
+        # bird protocol table: Name Proto Table State Since Info
+        if len(parts) >= 6 and parts[1] == "BGP":
+            state = parts[3].lower()
+            # Need detail to get neighbor/ASN — use birdc show protocols all
+            peers.append({
+                "neighbor": parts[0],
+                "remote_asn": "?",
+                "state": state,
+            })
+    return peers
+
+
+def show_bgp_peers(lab_name: str) -> None:
+    podman = Podman()
+
+    containers = podman.container_list(label=f"{LABEL_KEY}={lab_name}")
+    if not containers:
+        print(f"No containers found for lab '{lab_name}'.")
+        return
+
+    running = [c for c in containers if c.get("State") == "running"]
+    if not running:
+        print(f"No running containers in lab '{lab_name}'.")
+        return
+
+    print(f"{'ROUTER':<30} {'NEIGHBOR':<18} {'REMOTE AS':<12} {'STATE':<15}")
+    for c in running:
+        container_name = c["Names"][0]
+        labels = c.get("Labels", {})
+        image = c.get("Image", "")
+
+        # Determine kind from image name
+        peers = []
+        if "gobgp" in image:
+            result = podman.container_exec(container_name, ["gobgp", "-j", "neighbor"])
+            if result.returncode == 0 and result.stdout.strip():
+                peers = _parse_gobgp_peers(result.stdout)
+        elif "bird" in image:
+            result = podman.container_exec(container_name, ["birdc", "show", "protocols"])
+            if result.returncode == 0 and result.stdout.strip():
+                peers = _parse_bird_peers(result.stdout)
+
+        # Strip lab prefix from container name for display
+        display_name = container_name.removeprefix(f"nl-{lab_name}-")
+
+        if not peers:
+            print(f"{display_name:<30} {'(no peers)':<18} {'':<12} {'':<15}")
+        else:
+            for peer in peers:
+                print(f"{display_name:<30} {peer['neighbor']:<18} {str(peer['remote_asn']):<12} {peer['state']:<15}")

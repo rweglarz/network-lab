@@ -37,3 +37,20 @@ def restart(lab_name):
 def list_cmd(lab_name):
     """List containers in a lab."""
     engine.list_containers(lab_name)
+
+
+@cli.command("generate-config")
+@click.option("-f", "--file", "config_file", required=True, type=click.Path(exists=True),
+              help="Path to lab YAML configuration file.")
+@click.option("--force", is_flag=True, help="Overwrite existing config files.")
+def generate_config(config_file, force):
+    """Generate BGP config files for all routers in a lab."""
+    config = parse_config(config_file)
+    engine.ensure_configs(config, force=force)
+
+
+@cli.command("show-bgp-peers")
+@click.argument("lab_name")
+def show_bgp_peers(lab_name):
+    """Show BGP peers across all routers in a lab."""
+    engine.show_bgp_peers(lab_name)

@@ -20,6 +20,7 @@ class Link:
 class Router:
     name: str
     asn: int | None = None
+    kind: str | None = None
 
 
 @dataclass
@@ -46,10 +47,18 @@ class LabConfig:
     def network_name(self, index: int) -> str:
         return f"{self.prefix}-link{index}"
 
-    def image_for_router(self, router_name: str) -> str:
+    def kind_for_router(self, router_name: str) -> Kind:
+        router = next((r for r in self.routers if r.name == router_name), None)
+        if router and router.kind:
+            kind = next((k for k in self.kinds if k.name == router.kind), None)
+            if kind:
+                return kind
         if self.kinds:
-            return self.kinds[0].image
-        raise ValueError(f"No image defined for router {router_name}")
+            return self.kinds[0]
+        raise ValueError(f"No kind defined for router {router_name}")
+
+    def image_for_router(self, router_name: str) -> str:
+        return self.kind_for_router(router_name).image
 
 
 def normalize_lab_name(name: str) -> str:
@@ -73,6 +82,7 @@ def parse_config(path: str) -> LabConfig:
         routers.append(Router(
             name=router_name,
             asn=router_data.get("asn"),
+            kind=router_data.get("kind"),
         ))
 
     links = []

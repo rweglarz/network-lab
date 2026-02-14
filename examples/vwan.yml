@@ -4,14 +4,22 @@ lab:
 kinds:
   - gobgp:
       image: localhost/gobgp:latest
+  - bird:
+      image: localhost/bird:latest
 
 routers:
   vwan-us-west:
     asn: 65515
+    kind: gobgp
   vwan-us-east:
     asn: 65515
+    kind: gobgp
   prisma-us-east:
     asn: 65534
+    kind: gobgp
+  dc-us-east:
+    asn: 65501
+    kind: bird
 
 links:
   - peers:

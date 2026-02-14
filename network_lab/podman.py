@@ -56,6 +56,7 @@ class Podman:
                       labels: dict[str, str] | None = None,
                       cap_add: list[str] | None = None,
                       network: str | None = None,
+                      volumes: list[str] | None = None,
                       command: list[str] | None = None) -> None:
         cmd = ["run", "-d", "--name", name, "--hostname", hostname]
         for key, value in (labels or {}).items():
@@ -64,6 +65,8 @@ class Podman:
             cmd.extend(["--cap-add", cap])
         if network:
             cmd.extend(["--network", network])
+        for vol in (volumes or []):
+            cmd.extend(["-v", vol])
         cmd.append(image)
         cmd.extend(command or [])
         self._run(*cmd)
