@@ -13,6 +13,7 @@ requirements:
   - stop vwan-lab
   - restart vwan-lab
   - list containers vwan-lab
-- generate the gobgp or bird config file according to the required image type
 
 
+other:
+- do not add Co-Authored-By to each commit, we both know you did it
