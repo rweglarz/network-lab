@@ -1,11 +1,11 @@
 import json
+import re
 import sys
+from ipaddress import ip_network
 from pathlib import Path
 
 from network_lab.bgp_config import generate_config
-from ipaddress import ip_network
-
-from network_lab.config import LabConfig
+from network_lab.config import LabConfig, parse_config
 from network_lab.podman import Podman, PodmanError
 
 
@@ -334,3 +334,293 @@ def show_bgp_peers(lab_name: str) -> None:
         else:
             for peer in peers:
                 print(f"{display_name:<30} {peer['neighbor']:<18} {str(peer['remote_asn']):<12} {peer['state']:<15}")
+
+
+# ---------------------------------------------------------------------------
+# trace – hop-by-hop path tracing with BGP route details
+# ---------------------------------------------------------------------------
+
+def _load_lab_config(lab_name: str, podman: Podman) -> LabConfig:
+    """Recover LabConfig for a running lab from container labels."""
+    containers = podman.container_list(label=f"{LABEL_KEY}={lab_name}")
+    if not containers:
+        print(f"No containers found for lab '{lab_name}'.", file=sys.stderr)
+        sys.exit(1)
+    config_path = containers[0].get("Labels", {}).get("nl-config")
+    if not config_path:
+        print(f"Cannot find config path for lab '{lab_name}'.", file=sys.stderr)
+        sys.exit(1)
+    return parse_config(config_path)
+
+
+def _build_ip_map(config: LabConfig) -> dict[str, str]:
+    """Build mapping of bare IP address -> router name from links and networks."""
+    ip_map: dict[str, str] = {}
+    for link in config.links:
+        for peer in link.peers:
+            bare_ip = peer.ip.split("/")[0]
+            ip_map[bare_ip] = peer.router
+    for router_name, nets in config.networks.items():
+        for net in nets:
+            network = ip_network(net.prefix, strict=False)
+            bare_ip = str(network.network_address + 1)
+            ip_map[bare_ip] = router_name
+    return ip_map
+
+
+def _container_kind(image: str) -> str:
+    """Determine daemon kind from container image name."""
+    if "gobgp" in image:
+        return "gobgp"
+    elif "bird" in image:
+        return "bird"
+    elif "frr" in image:
+        return "frr"
+    return "unknown"
+
+
+def _parse_ip_route_get(output: str) -> str | None:
+    """Extract next-hop IP from 'ip route get' output.
+
+    Examples:
+      '172.17.11.1 via 192.168.3.2 dev eth2 src ...'  -> '192.168.3.2'
+      '172.17.11.1 dev dummy0 src 172.17.11.1'        -> None (local)
+    """
+    m = re.search(r"via\s+(\S+)", output)
+    if m:
+        return m.group(1)
+    return None
+
+
+def _query_bgp_route(podman: Podman, container: str, kind: str, dst_ip: str) -> dict:
+    """Query BGP daemon for route details towards dst_ip.
+
+    Returns dict with keys: prefix, as_path, localpref, communities, metric
+    """
+    empty = {"prefix": "-", "as_path": "-", "localpref": "-", "communities": "-", "metric": "-"}
+    try:
+        if kind == "gobgp":
+            return _query_gobgp_route(podman, container, dst_ip)
+        elif kind == "bird":
+            return _query_bird_route(podman, container, dst_ip)
+        elif kind == "frr":
+            return _query_frr_route(podman, container, dst_ip)
+    except PodmanError:
+        pass
+    return empty
+
+
+def _query_gobgp_route(podman: Podman, container: str, dst_ip: str) -> dict:
+    """Query gobgp for best route to dst_ip."""
+    empty = {"prefix": "-", "as_path": "-", "localpref": "-", "communities": "-", "metric": "-"}
+    result = podman.container_exec(container, ["gobgp", "-j", "global", "rib", "-a", "ipv4", dst_ip])
+    if not result.stdout.strip():
+        return empty
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return empty
+    if not data:
+        return empty
+    # gobgp returns a list of destinations; pick the first with best path
+    dest = data[0]
+    prefix = dest.get("prefix", "-")
+    # Find the best path
+    paths = dest.get("paths", [])
+    best = paths[0] if paths else {}
+    attrs = {a["type"]: a for a in best.get("attrs", [])}
+    as_path_attr = attrs.get(2, {})  # type 2 = AS_PATH
+    as_path_segs = as_path_attr.get("as_paths", [])
+    as_nums = []
+    for seg in as_path_segs:
+        as_nums.extend(seg.get("asns", []))
+    as_path = " ".join(str(a) for a in as_nums) if as_nums else "-"
+    localpref = str(attrs.get(5, {}).get("value", "-"))  # type 5 = LOCAL_PREF
+    communities_attr = attrs.get(8, {})  # type 8 = COMMUNITIES
+    comms = communities_attr.get("communities", [])
+    # Convert 32-bit community integers to x:y format
+    communities = " ".join(f"{c >> 16}:{c & 0xFFFF}" for c in comms) if comms else "-"
+    med = str(attrs.get(4, {}).get("value", "-"))  # type 4 = MULTI_EXIT_DISC
+    return {"prefix": prefix, "as_path": as_path, "localpref": localpref,
+            "communities": communities, "metric": med}
+
+
+def _query_bird_route(podman: Podman, container: str, dst_ip: str) -> dict:
+    """Query bird for best route to dst_ip."""
+    empty = {"prefix": "-", "as_path": "-", "localpref": "-", "communities": "-", "metric": "-"}
+    result = podman.container_exec(container, ["birdc", "show", "route", "for", dst_ip, "all"])
+    if not result.stdout.strip():
+        return empty
+    output = result.stdout
+    prefix = "-"
+    as_path = "-"
+    localpref = "-"
+    communities = "-"
+    metric = "-"
+    for line in output.splitlines():
+        line = line.strip()
+        # First line with a prefix: "172.17.11.0/24 unicast [dc_eu_west ...]"
+        if "/" in line and "unicast" in line:
+            prefix = line.split()[0]
+        if line.startswith("BGP.as_path:"):
+            val = line.split(":", 1)[1].strip()
+            as_path = val if val else "-"
+        if line.startswith("BGP.local_pref:"):
+            localpref = line.split(":", 1)[1].strip()
+        if line.startswith("BGP.community:"):
+            val = line.split(":", 1)[1].strip()
+            # Bird uses (x,y) format — convert to x:y
+            val = re.sub(r"\((\d+),(\d+)\)", r"\1:\2", val)
+            communities = val if val else "-"
+        if line.startswith("BGP.med:"):
+            metric = line.split(":", 1)[1].strip()
+    return {"prefix": prefix, "as_path": as_path, "localpref": localpref,
+            "communities": communities, "metric": metric}
+
+
+def _query_frr_route(podman: Podman, container: str, dst_ip: str) -> dict:
+    """Query FRR for best route to dst_ip."""
+    empty = {"prefix": "-", "as_path": "-", "localpref": "-", "communities": "-", "metric": "-"}
+    result = podman.container_exec(
+        container, ["vtysh", "-c", f"show bgp ipv4 unicast {dst_ip} json"])
+    if not result.stdout.strip():
+        return empty
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return empty
+    prefix = data.get("prefix", "-")
+    pfxlen = data.get("prefixLen")
+    if prefix != "-" and pfxlen is not None:
+        prefix = f"{prefix}/{pfxlen}"
+    paths = data.get("paths", [])
+    if not paths:
+        return empty
+    best = paths[0]
+    for p in paths:
+        if p.get("bestpath", {}).get("overall", False):
+            best = p
+            break
+    aspath = best.get("aspath", {})
+    as_path_str = aspath.get("string", "").strip()
+    as_path = as_path_str if as_path_str else "-"
+    localpref = str(best.get("locPrf", "-"))
+    med = str(best.get("metric", "-"))
+    comm_list = best.get("community", {})
+    if isinstance(comm_list, dict):
+        communities = comm_list.get("string", "-")
+    elif isinstance(comm_list, list):
+        communities = " ".join(str(c) for c in comm_list) if comm_list else "-"
+    else:
+        communities = "-"
+    return {"prefix": prefix, "as_path": as_path, "localpref": localpref,
+            "communities": communities, "metric": med}
+
+
+def _find_router_for_ip(ip: str, ip_map: dict[str, str]) -> str | None:
+    """Find which router owns a given IP address."""
+    return ip_map.get(ip)
+
+
+def _trace_one_direction(
+    podman: Podman,
+    config: LabConfig,
+    ip_map: dict[str, str],
+    containers: list[dict],
+    src_ip: str,
+    dst_ip: str,
+) -> list[dict]:
+    """Trace from src_ip to dst_ip, returning list of hop dicts."""
+    container_map = {}
+    for c in containers:
+        name = c["Names"][0]
+        router_name = name.removeprefix(f"nl-{config.name}-")
+        container_map[router_name] = (name, _container_kind(c.get("Image", "")))
+
+    hops = []
+    current_router = _find_router_for_ip(src_ip, ip_map)
+    if not current_router:
+        print(f"  Could not find router for {src_ip}", file=sys.stderr)
+        return hops
+
+    visited = set()
+    max_hops = 20
+    while current_router and current_router not in visited and len(hops) < max_hops:
+        visited.add(current_router)
+        if current_router not in container_map:
+            break
+        container_name, kind = container_map[current_router]
+
+        # Check if dst_ip is local to this router
+        dst_is_local = _find_router_for_ip(dst_ip, ip_map) == current_router
+
+        # Get BGP route details
+        route_info = _query_bgp_route(podman, container_name, kind, dst_ip)
+
+        hops.append({
+            "router": current_router,
+            **route_info,
+        })
+
+        if dst_is_local:
+            break
+
+        # Get next hop via ip route get
+        try:
+            result = podman.container_exec(container_name, ["ip", "route", "get", dst_ip])
+            next_hop = _parse_ip_route_get(result.stdout)
+        except PodmanError:
+            break
+
+        if not next_hop:
+            break
+
+        next_router = _find_router_for_ip(next_hop, ip_map)
+        if not next_router:
+            break
+        current_router = next_router
+
+    return hops
+
+
+def _print_trace(direction: str, src_ip: str, dst_ip: str, hops: list[dict]) -> None:
+    """Print a formatted trace table."""
+    print(f"\n{direction}: {src_ip} -> {dst_ip}")
+    print(f"{'HOP':<5} {'ROUTER':<20} {'PREFIX':<20} {'AS PATH':<20} {'LP':<6} {'MED':<6} {'COMMUNITIES'}")
+    for i, hop in enumerate(hops, 1):
+        print(f"{i:<5} {hop['router']:<20} {hop['prefix']:<20} "
+              f"{hop['as_path']:<20} {hop['localpref']:<6} {hop['metric']:<6} {hop['communities']}")
+
+
+def trace_path(lab_name: str, src_ip: str, dst_ip: str) -> None:
+    """Trace path between two IPs, showing BGP route details at each hop."""
+    podman = Podman()
+    config = _load_lab_config(lab_name, podman)
+
+    containers = podman.container_list(label=f"{LABEL_KEY}={lab_name}")
+    running = [c for c in containers if c.get("State") == "running"]
+    if not running:
+        print(f"No running containers in lab '{lab_name}'.")
+        return
+
+    ip_map = _build_ip_map(config)
+
+    # Forward trace
+    forward_hops = _trace_one_direction(podman, config, ip_map, running, src_ip, dst_ip)
+    _print_trace("Forward path", src_ip, dst_ip, forward_hops)
+
+    # Backward trace
+    backward_hops = _trace_one_direction(podman, config, ip_map, running, dst_ip, src_ip)
+    _print_trace("Backward path", dst_ip, src_ip, backward_hops)
+
+    # Compare paths
+    forward_routers = [h["router"] for h in forward_hops]
+    backward_routers = [h["router"] for h in backward_hops]
+    backward_reversed = list(reversed(backward_routers))
+
+    if forward_routers == backward_reversed:
+        print(f"\nPaths are symmetric.")
+    else:
+        print(f"\n!! Forward and backward paths differ!")
+        print(f"   Forward:  {' -> '.join(forward_routers)}")
+        print(f"   Backward: {' -> '.join(backward_routers)}")

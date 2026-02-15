@@ -54,3 +54,12 @@ def generate_config(config_file, force):
 def show_bgp_peers(lab_name):
     """Show BGP peers across all routers in a lab."""
     engine.show_bgp_peers(lab_name)
+
+
+@cli.command("trace")
+@click.argument("lab_name")
+@click.argument("src")
+@click.argument("dst")
+def trace(lab_name, src, dst):
+    """Trace path between two IPs showing BGP route details at each hop."""
+    engine.trace_path(lab_name, src, dst)

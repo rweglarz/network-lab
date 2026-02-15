@@ -21,6 +21,9 @@ requirements:
 
 cli requirements:
 - show-bgp-peers - show bgp peers in all routers in a format abstracted from underlying bgp daemon
+- trace - trace path between two ips, use "ip route get" and corresponding bgp daemon command to show selected path details (AS path, cost/metric/preference). Output should be similar to one below. If multiple paths apply show all of them. 
+  - example: <hop number if different from prev> <next router name> <prefix> <as path> <cost etc>
+  - compare if forward and backward paths use the same routers, if not explicitly indicate / alert on this
 
 other:
 - do not add Co-Authored-By to each commit, we both know you did it
