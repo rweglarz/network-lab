@@ -83,7 +83,8 @@ def generate_gobgp_config(router: Router, router_id: str, neighbors: list[Neighb
                 '      route-disposition = "accept-route"',
                 '    [policy-definitions.statements.actions.bgp-actions.set-community]',
                 '      options = "add"',
-                f'      set-community-method = ["{net.community}"]',
+                '    [policy-definitions.statements.actions.bgp-actions.set-community.set-community-method]',
+                f'      communities-list = ["{net.community}"]',
             ])
         lines.append("")
 
