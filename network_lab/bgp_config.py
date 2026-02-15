@@ -184,14 +184,17 @@ def generate_bird_config(router: Router, router_id: str, neighbors: list[Neighbo
     for n in neighbors:
         bird_name = n.name.replace("-", "_")
         has_filter = has_communities or n.as_prepend
+        is_ibgp = n.remote_asn == router.asn
 
         lines.extend([
             f"protocol bgp {bird_name} {{",
             f"  local as {router.asn};",
             f"  neighbor {n.ip} as {n.remote_asn};",
             "  ipv4 {",
-            "    import all;",
         ])
+        if is_ibgp:
+            lines.append("    next hop self;")
+        lines.append("    import all;")
         if has_filter:
             lines.append(f"    export filter export_{bird_name};")
         else:
@@ -222,6 +225,12 @@ def generate_frr_config(router: Router, router_id: str, neighbors: list[Neighbor
             safe_name = net.prefix.replace("/", "-").replace(".", "-")
             lines.append(f"ip prefix-list NET-{safe_name} seq 5 permit {net.prefix}")
         lines.append("!")
+
+    # Import permit-all route-map
+    lines.extend([
+        "route-map IMPORT-ALLOW permit 10",
+        "!",
+    ])
 
     # Per-neighbor export route-maps
     for n in neighbors:
@@ -254,10 +263,9 @@ def generate_frr_config(router: Router, router_id: str, neighbors: list[Neighbor
             seq += 10
 
         # Catch-all accept
-        if community_nets or n.as_prepend:
-            lines.extend([
-                f"route-map {rm_name} permit {seq}",
-            ])
+        lines.extend([
+            f"route-map {rm_name} permit {seq}",
+        ])
 
         lines.append("!")
 
@@ -281,8 +289,10 @@ def generate_frr_config(router: Router, router_id: str, neighbors: list[Neighbor
 
     for n in neighbors:
         safe_neighbor = n.name.replace("-", "_")
-        if community_nets or n.as_prepend:
-            lines.append(f"    neighbor {n.ip} route-map EXPORT-{safe_neighbor} out")
+        if n.remote_asn == router.asn:
+            lines.append(f"    neighbor {n.ip} next-hop-self")
+        lines.append(f"    neighbor {n.ip} route-map IMPORT-ALLOW in")
+        lines.append(f"    neighbor {n.ip} route-map EXPORT-{safe_neighbor} out")
 
     lines.extend([
         "  exit-address-family",
