@@ -14,6 +14,7 @@ class Peer:
 @dataclass
 class Link:
     peers: list[Peer]
+    as_prepend: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -94,7 +95,8 @@ def parse_config(path: str) -> LabConfig:
                 interface=peer_data["interface"],
                 ip=peer_data["ip"],
             ))
-        links.append(Link(peers=peers))
+        as_prepend = link_entry.get("as_prepend", [])
+        links.append(Link(peers=peers, as_prepend=as_prepend))
 
     return LabConfig(
         name=lab_name,

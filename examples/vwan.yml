@@ -8,6 +8,12 @@ kinds:
       image: localhost/bird:latest
 
 routers:
+  vwan-eu-west:
+    asn: 65515
+    kind: bird
+  vwan-eu-north:
+    asn: 65515
+    kind: bird
   vwan-us-west:
     asn: 65515
     kind: gobgp
@@ -23,6 +29,22 @@ routers:
 
 links:
   - peers:
+      vwan-eu-west:
+        interface: eth9
+        ip: 192.168.240.1/24
+      vwan-eu-north:
+        interface: eth9
+        ip: 192.168.240.2/24
+      vwan-us-west:
+        interface: eth9
+        ip: 192.168.240.3/24
+      vwan-us-east:
+        interface: eth9
+        ip: 192.168.240.4/24
+    as_prepend:
+      - 65520
+      - 65520
+  - peers:
       vwan-us-west:
         interface: eth1
         ip: 192.168.1.1/30
@@ -36,3 +58,4 @@ links:
       prisma-us-east:
         interface: eth1
         ip: 192.168.2.2/30
+
