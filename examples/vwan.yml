@@ -4,6 +4,8 @@ lab:
 kinds:
   - gobgp:
       image: localhost/gobgp:latest
+  - frr:
+      image: localhost/frr:latest
   - bird:
       image: localhost/bird:latest
 
@@ -22,16 +24,16 @@ routers:
     kind: gobgp
   prisma-us-east:
     asn: 65534
-    kind: gobgp
+    kind: frr
   prisma-eu-west:
     asn: 65534
-    kind: gobgp
+    kind: frr
   prisma-eu-north:
     asn: 65534
-    kind: gobgp
+    kind: frr
   prisma-us-west:
     asn: 65534
-    kind: gobgp
+    kind: frr
   dc-us-east:
     asn: 65501
     kind: bird

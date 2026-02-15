@@ -15,6 +15,7 @@ LABEL_KEY = "nl-lab"
 KIND_CONFIG = {
     "gobgp": "/etc/gobgp/gobgp.conf",
     "bird": "/etc/bird/bird.conf",
+    "frr": "/etc/frr/frr.conf",
 }
 
 
@@ -90,6 +91,10 @@ def start(config: LabConfig) -> None:
             host_path = config_paths[router.name]
             volumes = [f"{host_path}:{mount_path}:ro,Z"]
 
+        caps = ["NET_ADMIN", "NET_RAW"]
+        if kind.name == "frr":
+            caps.append("SYS_ADMIN")
+
         print(f"Starting container {container_name}...")
         try:
             podman.container_run(
@@ -97,7 +102,7 @@ def start(config: LabConfig) -> None:
                 name=container_name,
                 hostname=router.name,
                 labels=lab_labels,
-                cap_add=["NET_ADMIN", "NET_RAW"],
+                cap_add=caps,
                 network=mgmt_net,
                 volumes=volumes,
             )
@@ -255,6 +260,26 @@ def _parse_bird_peers(output: str) -> list[dict]:
     return peers
 
 
+def _parse_frr_peers(output: str) -> list[dict]:
+    """Parse 'vtysh -c show bgp summary json' output into unified peer dicts."""
+    peers = []
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        return peers
+    ipv4 = data.get("ipv4Unicast", {})
+    for addr, info in ipv4.get("peers", {}).items():
+        state = info.get("state", "unknown")
+        if state == "Established":
+            state = "established"
+        peers.append({
+            "neighbor": addr,
+            "remote_asn": info.get("remoteAs", "?"),
+            "state": state,
+        })
+    return peers
+
+
 def show_bgp_peers(lab_name: str) -> None:
     podman = Podman()
 
@@ -284,6 +309,10 @@ def show_bgp_peers(lab_name: str) -> None:
             result = podman.container_exec(container_name, ["birdc", "show", "protocols"])
             if result.returncode == 0 and result.stdout.strip():
                 peers = _parse_bird_peers(result.stdout)
+        elif "frr" in image:
+            result = podman.container_exec(container_name, ["vtysh", "-c", "show bgp summary json"])
+            if result.returncode == 0 and result.stdout.strip():
+                peers = _parse_frr_peers(result.stdout)
 
         # Strip lab prefix from container name for display
         display_name = container_name.removeprefix(f"nl-{lab_name}-")

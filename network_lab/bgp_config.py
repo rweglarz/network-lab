@@ -199,6 +199,93 @@ def generate_bird_config(router: Router, router_id: str, neighbors: list[Neighbo
     return "\n".join(lines)
 
 
+def generate_frr_config(router: Router, router_id: str, neighbors: list[Neighbor],
+                        networks: list[Network] | None = None) -> str:
+    """Generate FRR unified config."""
+    networks = networks or []
+    community_nets = [n for n in networks if n.community]
+    lines = [
+        "frr defaults traditional",
+        f"hostname {router.name}",
+        "!",
+    ]
+
+    # Prefix-lists for community tagging
+    if community_nets:
+        for i, net in enumerate(community_nets):
+            safe_name = net.prefix.replace("/", "-").replace(".", "-")
+            lines.append(f"ip prefix-list NET-{safe_name} seq 5 permit {net.prefix}")
+        lines.append("!")
+
+    # Per-neighbor export route-maps
+    for n in neighbors:
+        safe_neighbor = n.name.replace("-", "_")
+        rm_name = f"EXPORT-{safe_neighbor}"
+        seq = 10
+
+        # Community tagging entries
+        for net in community_nets:
+            safe_name = net.prefix.replace("/", "-").replace(".", "-")
+            lines.extend([
+                f"route-map {rm_name} permit {seq}",
+                f"  match ip address prefix-list NET-{safe_name}",
+                f"  set community {net.community} additive",
+            ])
+            if n.as_prepend:
+                asn = n.as_prepend[0]
+                prepend_str = " ".join(str(asn) for _ in n.as_prepend)
+                lines.append(f"  set as-path prepend {prepend_str}")
+            seq += 10
+
+        # AS prepend catch-all (for routes without community match)
+        if n.as_prepend:
+            asn = n.as_prepend[0]
+            prepend_str = " ".join(str(asn) for _ in n.as_prepend)
+            lines.extend([
+                f"route-map {rm_name} permit {seq}",
+                f"  set as-path prepend {prepend_str}",
+            ])
+            seq += 10
+
+        # Catch-all accept
+        if community_nets or n.as_prepend:
+            lines.extend([
+                f"route-map {rm_name} permit {seq}",
+            ])
+
+        lines.append("!")
+
+    # Router BGP section
+    lines.extend([
+        f"router bgp {router.asn}",
+        f"  bgp router-id {router_id}",
+    ])
+
+    for n in neighbors:
+        lines.extend([
+            f"  neighbor {n.ip} remote-as {n.remote_asn}",
+            f"  neighbor {n.ip} description {n.name}",
+        ])
+
+    lines.extend([
+        "  !",
+        "  address-family ipv4 unicast",
+        "    redistribute connected",
+    ])
+
+    for n in neighbors:
+        safe_neighbor = n.name.replace("-", "_")
+        if community_nets or n.as_prepend:
+            lines.append(f"    neighbor {n.ip} route-map EXPORT-{safe_neighbor} out")
+
+    lines.extend([
+        "  exit-address-family",
+        "!",
+    ])
+
+    return "\n".join(lines)
+
+
 def generate_config(config: LabConfig, router: Router) -> str:
     """Generate BGP config for a router based on its kind."""
     kind = config.kind_for_router(router.name)
@@ -211,5 +298,7 @@ def generate_config(config: LabConfig, router: Router) -> str:
         return generate_gobgp_config(router, router_id, neighbors, networks)
     elif kind.name == "bird":
         return generate_bird_config(router, router_id, neighbors, networks)
+    elif kind.name == "frr":
+        return generate_frr_config(router, router_id, neighbors, networks)
     else:
         raise ValueError(f"Unknown kind '{kind.name}' for router '{router.name}'")
