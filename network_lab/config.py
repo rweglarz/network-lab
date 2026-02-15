@@ -7,7 +7,7 @@ import yaml
 @dataclass
 class Peer:
     router: str
-    interface: str
+    interface: str | None
     ip: str
 
 
@@ -99,7 +99,7 @@ def parse_config(path: str) -> LabConfig:
         for peer_name, peer_data in link_entry["peers"].items():
             peers.append(Peer(
                 router=peer_name,
-                interface=peer_data["interface"],
+                interface=peer_data.get("interface"),
                 ip=peer_data["ip"],
             ))
         as_prepend = link_entry.get("as_prepend", [])

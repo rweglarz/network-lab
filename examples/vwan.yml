@@ -37,6 +37,9 @@ routers:
   dc-us-east:
     asn: 65501
     kind: bird
+  dc-eu-west:
+    asn: 65502
+    kind: bird
 
 links:
   - peers:
@@ -70,21 +73,24 @@ links:
         ip: 192.168.250.4/24
   - peers:
       vwan-us-west:
-        interface: eth2
         ip: 192.168.2.1/30
       prisma-us-east:
-        interface: eth1
         ip: 192.168.2.2/30
   - peers:
       dc-us-east:
-        interface: eth3
-        ip: 192.168.3.1/29
-      vwan-us-west:
-        interface: eth3
-        ip: 192.168.3.3/29
+        ip: 192.168.3.1/30
       vwan-us-east:
-        interface: eth3
-        ip: 192.168.3.4/29
+        ip: 192.168.3.2/30
+  - peers:
+      dc-eu-west:
+        ip: 192.168.3.5/30
+      vwan-eu-west:
+        ip: 192.168.3.6/30
+  - peers:
+      dc-us-east:
+        ip: 192.168.230.1/30
+      dc-eu-west:
+        ip: 192.168.230.2/30
 
 networks:
   vwan-eu-west:

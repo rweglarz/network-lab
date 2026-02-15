@@ -84,4 +84,4 @@ class Podman:
         self._run("rm", "-f", name, check=False)
 
     def container_exec(self, container: str, command: list[str]) -> subprocess.CompletedProcess:
-        return self._run("exec", container, *command, check=False)
+        return self._run("exec", container, *command, check=True)

@@ -52,11 +52,15 @@ def start(config: LabConfig) -> None:
     lab_labels = {LABEL_KEY: config.name, "nl-config": config.config_path}
 
     # Build a map of router -> list of (network_name, peer_data) for connection ordering
+    # Assign default interface names (ethN) for peers without an explicit interface
     router_networks: dict[str, list[tuple[str, dict]]] = {r.name: [] for r in config.routers}
+    router_iface_counter: dict[str, int] = {r.name: 1 for r in config.routers}  # eth0 = mgmt
     for i, link in enumerate(config.links):
         net_name = config.network_name(i)
         for peer in link.peers:
-            router_networks[peer.router].append((net_name, {"interface": peer.interface, "ip": peer.ip}))
+            iface = peer.interface if peer.interface is not None else f"eth{router_iface_counter[peer.router]}"
+            router_iface_counter[peer.router] += 1
+            router_networks[peer.router].append((net_name, {"interface": iface, "ip": peer.ip}))
 
     # Generate BGP configs (only if missing)
     print("Generating BGP configs...")
@@ -120,12 +124,20 @@ def start(config: LabConfig) -> None:
     # Configure IP addresses on link interfaces
     for router in config.routers:
         container_name = config.container_name(router.name)
+        print(f"Configuring {container_name}")
         for idx, (_, peer_data) in enumerate(router_networks[router.name]):
             # eth0 = mgmt, so link interfaces start at eth1
-            iface = f"eth{idx + 1}"
+            kernel_iface = f"eth{idx + 1}"
+            iface = peer_data["interface"]
             ip = peer_data["ip"]
 
-            print(f"  Configuring {iface} on {container_name} with {ip}...")
+            # Rename interface if configured name differs from kernel-assigned name
+            if iface != kernel_iface:
+                print(f"  Renaming {kernel_iface} to {iface}")
+                podman.container_exec(container_name, ["ip", "link", "set", kernel_iface, "down"])
+                podman.container_exec(container_name, ["ip", "link", "set", kernel_iface, "name", iface])
+
+            print(f"  Configuring {iface} with {ip}...")
             podman.container_exec(container_name, ["ip", "addr", "add", ip, "dev", iface])
             podman.container_exec(container_name, ["ip", "link", "set", iface, "up"])
 
