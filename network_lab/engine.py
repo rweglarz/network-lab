@@ -3,6 +3,8 @@ import sys
 from pathlib import Path
 
 from network_lab.bgp_config import generate_config
+from ipaddress import ip_network
+
 from network_lab.config import LabConfig
 from network_lab.podman import Podman, PodmanError
 
@@ -120,6 +122,21 @@ def start(config: LabConfig) -> None:
 
             print(f"  Configuring {iface} on {container_name} with {ip}...")
             podman.container_exec(container_name, ["ip", "addr", "add", ip, "dev", iface])
+            podman.container_exec(container_name, ["ip", "link", "set", iface, "up"])
+
+    # Create dummy interfaces for network prefixes
+    for router in config.routers:
+        router_nets = config.networks.get(router.name, [])
+        if not router_nets:
+            continue
+        container_name = config.container_name(router.name)
+        for i, net in enumerate(router_nets):
+            iface = f"dummy{i}"
+            network = ip_network(net.prefix, strict=False)
+            host_ip = f"{network.network_address + 1}/{network.prefixlen}"
+            print(f"  Creating {iface} on {container_name} with {host_ip}...")
+            podman.container_exec(container_name, ["ip", "link", "add", iface, "type", "dummy"])
+            podman.container_exec(container_name, ["ip", "addr", "add", host_ip, "dev", iface])
             podman.container_exec(container_name, ["ip", "link", "set", iface, "up"])
 
     print(f"Lab '{config.name}' started successfully.")

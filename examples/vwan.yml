@@ -23,6 +23,15 @@ routers:
   prisma-us-east:
     asn: 65534
     kind: gobgp
+  prisma-eu-west:
+    asn: 65534
+    kind: gobgp
+  prisma-eu-north:
+    asn: 65534
+    kind: gobgp
+  prisma-us-west:
+    asn: 65534
+    kind: gobgp
   dc-us-east:
     asn: 65501
     kind: bird
@@ -45,10 +54,55 @@ links:
       - 65520
       - 65520
   - peers:
+      prisma-eu-west:
+        interface: eth9
+        ip: 192.168.250.1/24
+      prisma-eu-north:
+        interface: eth9
+        ip: 192.168.250.2/24
+      prisma-us-east:
+        interface: eth9
+        ip: 192.168.250.3/24
+      prisma-us-west:
+        interface: eth9
+        ip: 192.168.250.4/24
+  - peers:
       vwan-us-west:
         interface: eth2
         ip: 192.168.2.1/30
       prisma-us-east:
         interface: eth1
         ip: 192.168.2.2/30
+  - peers:
+      dc-us-east:
+        interface: eth3
+        ip: 192.168.3.1/29
+      vwan-us-west:
+        interface: eth3
+        ip: 192.168.3.3/29
+      vwan-us-east:
+        interface: eth3
+        ip: 192.168.3.4/29
 
+networks:
+  vwan-eu-west:
+    - prefix: 172.16.11.0/24
+      community: 12076:50002
+    - prefix: 172.16.12.0/24
+      community: 12076:50002
+    - prefix: 172.16.13.0/24
+  vwan-eu-north:
+    - prefix: 172.16.21.0/24
+      community: 12076:50003
+    - prefix: 172.16.22.0/24
+      community: 12076:50003
+  prisma-eu-west:
+    - prefix: 172.16.111.0/24
+      community: "65534:11"
+    - prefix: 172.16.112.0/24
+      community: "65534:11"
+  prisma-us-east:
+    - prefix: 172.16.131.0/24
+      community: "65534:13"
+    - prefix: 172.16.132.0/24
+      community: "65534:13"

@@ -25,6 +25,12 @@ class Router:
 
 
 @dataclass
+class Network:
+    prefix: str
+    community: str | None = None
+
+
+@dataclass
 class Kind:
     name: str
     image: str
@@ -37,6 +43,7 @@ class LabConfig:
     kinds: list[Kind] = field(default_factory=list)
     routers: list[Router] = field(default_factory=list)
     links: list[Link] = field(default_factory=list)
+    networks: dict[str, list[Network]] = field(default_factory=dict)
 
     @property
     def prefix(self) -> str:
@@ -98,10 +105,21 @@ def parse_config(path: str) -> LabConfig:
         as_prepend = link_entry.get("as_prepend", [])
         links.append(Link(peers=peers, as_prepend=as_prepend))
 
+    networks: dict[str, list[Network]] = {}
+    for router_name, net_entries in raw.get("networks", {}).items():
+        networks[router_name] = [
+            Network(
+                prefix=entry["prefix"],
+                community=str(entry["community"]) if "community" in entry else None,
+            )
+            for entry in net_entries
+        ]
+
     return LabConfig(
         name=lab_name,
         config_path=config_path,
         kinds=kinds,
         routers=routers,
         links=links,
+        networks=networks,
     )

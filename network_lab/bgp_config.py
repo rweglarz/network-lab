@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from ipaddress import ip_interface
 
-from network_lab.config import LabConfig, Router
+from network_lab.config import LabConfig, Network, Router
 
 
 @dataclass
@@ -42,8 +42,10 @@ def get_neighbors(config: LabConfig, router_name: str) -> list[Neighbor]:
     return neighbors
 
 
-def generate_gobgp_config(router: Router, router_id: str, neighbors: list[Neighbor]) -> str:
+def generate_gobgp_config(router: Router, router_id: str, neighbors: list[Neighbor],
+                          networks: list[Network] | None = None) -> str:
     """Generate gobgpd TOML config."""
+    networks = networks or []
     lines = [
         "[global.config]",
         f'  as = {router.asn}',
@@ -51,28 +53,57 @@ def generate_gobgp_config(router: Router, router_id: str, neighbors: list[Neighb
         "",
     ]
 
+    # Define prefix sets for networks with communities
+    community_nets = [n for n in networks if n.community]
+    if community_nets:
+        for net in community_nets:
+            safe_name = net.prefix.replace("/", "-").replace(".", "-")
+            lines.extend([
+                '[[defined-sets.prefix-sets]]',
+                f'  prefix-set-name = "net-{safe_name}"',
+                '  [[defined-sets.prefix-sets.prefix-list]]',
+                f'    ip-prefix = "{net.prefix}"',
+                "",
+            ])
+
+    # Community tagging policy
+    if community_nets:
+        lines.extend([
+            '[[policy-definitions]]',
+            '  name = "set-communities"',
+        ])
+        for net in community_nets:
+            safe_name = net.prefix.replace("/", "-").replace(".", "-")
+            lines.extend([
+                '  [[policy-definitions.statements]]',
+                f'    name = "community-{safe_name}"',
+                '    [policy-definitions.statements.conditions.match-prefix-set]',
+                f'      prefix-set = "net-{safe_name}"',
+                '    [policy-definitions.statements.actions]',
+                '      route-disposition = "accept-route"',
+                '    [policy-definitions.statements.actions.bgp-actions.set-community]',
+                '      options = "add"',
+                f'      set-community-method = ["{net.community}"]',
+            ])
+        lines.append("")
+
     # Collect prepend policies needed
-    prepend_policies: dict[str, list[int]] = {}
     for n in neighbors:
         if n.as_prepend:
             policy_name = f"prepend-to-{n.name}"
-            prepend_policies[policy_name] = n.as_prepend
-
-    # Define policy statements for AS prepending
-    for policy_name, prepend_asns in prepend_policies.items():
-        asn = prepend_asns[0]
-        repeat_n = len(prepend_asns)
-        lines.extend([
-            f'[[policy-definitions]]',
-            f'  name = "{policy_name}"',
-            f'  [[policy-definitions.statements]]',
-            f'    [policy-definitions.statements.actions]',
-            f'      route-disposition = "accept-route"',
-            f'    [policy-definitions.statements.actions.bgp-actions.set-as-path-prepend]',
-            f'      as = "{asn}"',
-            f'      repeat-n = {repeat_n}',
-            "",
-        ])
+            asn = n.as_prepend[0]
+            repeat_n = len(n.as_prepend)
+            lines.extend([
+                f'[[policy-definitions]]',
+                f'  name = "{policy_name}"',
+                f'  [[policy-definitions.statements]]',
+                f'    [policy-definitions.statements.actions]',
+                f'      route-disposition = "accept-route"',
+                f'    [policy-definitions.statements.actions.bgp-actions.set-as-path-prepend]',
+                f'      as = "{asn}"',
+                f'      repeat-n = {repeat_n}',
+                "",
+            ])
 
     for n in neighbors:
         lines.extend([
@@ -82,11 +113,19 @@ def generate_gobgp_config(router: Router, router_id: str, neighbors: list[Neighb
             f"    peer-as = {n.remote_asn}",
             f'    description = "{n.name}"',
         ])
+
+        # Build per-neighbor export policy list
+        neighbor_policies = []
+        if community_nets:
+            neighbor_policies.append("set-communities")
         if n.as_prepend:
-            policy_name = f"prepend-to-{n.name}"
+            neighbor_policies.append(f"prepend-to-{n.name}")
+
+        if neighbor_policies:
+            policy_list = ", ".join(f'"{p}"' for p in neighbor_policies)
             lines.extend([
                 "  [neighbors.apply-policy.config]",
-                f'    export-policy-list = ["{policy_name}"]',
+                f'    export-policy-list = [{policy_list}]',
                 f'    default-export-policy = "accept-route"',
             ])
         lines.append("")
@@ -94,8 +133,13 @@ def generate_gobgp_config(router: Router, router_id: str, neighbors: list[Neighb
     return "\n".join(lines)
 
 
-def generate_bird_config(router: Router, router_id: str, neighbors: list[Neighbor]) -> str:
+def generate_bird_config(router: Router, router_id: str, neighbors: list[Neighbor],
+                         networks: list[Network] | None = None) -> str:
     """Generate BIRD2 config."""
+    networks = networks or []
+    has_communities = any(n.community for n in networks)
+    needs_export_filter = has_communities or any(n.as_prepend for n in neighbors)
+
     lines = [
         f'router id {router_id};',
         "",
@@ -108,19 +152,31 @@ def generate_bird_config(router: Router, router_id: str, neighbors: list[Neighbo
         "",
     ]
 
+    # Generate per-neighbor export filters combining community tagging and AS prepending
     for n in neighbors:
         bird_name = n.name.replace("-", "_")
+        if not has_communities and not n.as_prepend:
+            continue
+
+        lines.append(f"filter export_{bird_name} {{")
+        if has_communities:
+            for net in networks:
+                if net.community:
+                    asn_part, val_part = net.community.split(":")
+                    lines.append(f"  if net = {net.prefix} then bgp_community.add(({asn_part}, {val_part}));")
         if n.as_prepend:
             asn = n.as_prepend[0]
-            repeat_n = len(n.as_prepend)
-            prepend_lines = "\n".join(f"  bgp_path.prepend({asn});" for _ in range(repeat_n))
-            lines.extend([
-                f"filter prepend_to_{bird_name} {{",
-                prepend_lines,
-                "  accept;",
-                "}",
-                "",
-            ])
+            for _ in range(len(n.as_prepend)):
+                lines.append(f"  bgp_path.prepend({asn});")
+        lines.extend([
+            "  accept;",
+            "}",
+            "",
+        ])
+
+    for n in neighbors:
+        bird_name = n.name.replace("-", "_")
+        has_filter = has_communities or n.as_prepend
 
         lines.extend([
             f"protocol bgp {bird_name} {{",
@@ -129,8 +185,8 @@ def generate_bird_config(router: Router, router_id: str, neighbors: list[Neighbo
             "  ipv4 {",
             "    import all;",
         ])
-        if n.as_prepend:
-            lines.append(f"    export filter prepend_to_{bird_name};")
+        if has_filter:
+            lines.append(f"    export filter export_{bird_name};")
         else:
             lines.append("    export all;")
         lines.extend([
@@ -148,9 +204,11 @@ def generate_config(config: LabConfig, router: Router) -> str:
     router_id = get_router_id(config, router.name)
     neighbors = get_neighbors(config, router.name)
 
+    networks = config.networks.get(router.name, [])
+
     if kind.name == "gobgp":
-        return generate_gobgp_config(router, router_id, neighbors)
+        return generate_gobgp_config(router, router_id, neighbors, networks)
     elif kind.name == "bird":
-        return generate_bird_config(router, router_id, neighbors)
+        return generate_bird_config(router, router_id, neighbors, networks)
     else:
         raise ValueError(f"Unknown kind '{kind.name}' for router '{router.name}'")
