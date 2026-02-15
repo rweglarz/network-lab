@@ -12,16 +12,16 @@ kinds:
 routers:
   vwan-eu-west:
     asn: 65515
-    kind: bird
+    kind: frr
   vwan-eu-north:
     asn: 65515
-    kind: bird
+    kind: frr
   vwan-us-west:
     asn: 65515
-    kind: gobgp
+    kind: frr
   vwan-us-east:
     asn: 65515
-    kind: gobgp
+    kind: frr
   prisma-us-east:
     asn: 65534
     kind: frr

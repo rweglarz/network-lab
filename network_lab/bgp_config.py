@@ -151,6 +151,12 @@ def generate_bird_config(router: Router, router_id: str, neighbors: list[Neighbo
         "  ipv4;",
         "}",
         "",
+        "protocol kernel {",
+        "  ipv4 {",
+        "    export all;",
+        "  };",
+        "}",
+        "",
     ]
 
     # Generate per-neighbor export filters combining community tagging and AS prepending
