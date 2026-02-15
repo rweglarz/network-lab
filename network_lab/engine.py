@@ -246,7 +246,10 @@ def _parse_gobgp_peers(output: str) -> list[dict]:
         return peers
     for entry in data:
         state = entry.get("state", {})
-        session_state = _GOBGP_STATES.get(state.get("session_state", 0), "unknown")
+        if state.get("admin_down", False):
+            session_state = "admin down"
+        else:
+            session_state = _GOBGP_STATES.get(state.get("session_state", 0), "unknown")
         peers.append({
             "neighbor": state.get("neighbor_address", "?"),
             "remote_asn": state.get("peer_asn", 0),
@@ -256,19 +259,34 @@ def _parse_gobgp_peers(output: str) -> list[dict]:
 
 
 def _parse_bird_peers(output: str) -> list[dict]:
-    """Parse 'birdc show protocols' output into unified peer dicts."""
+    """Parse 'birdc show protocols all' output into unified peer dicts."""
     peers = []
+    current = None
     for line in output.splitlines():
         parts = line.split()
-        # bird protocol table: Name Proto Table State Since Info
-        if len(parts) >= 6 and parts[1] == "BGP":
-            state = parts[3].lower()
-            # Need detail to get neighbor/ASN — use birdc show protocols all
-            peers.append({
+        # Protocol header: Name Proto Table State Since [Info]
+        if parts and len(parts) >= 5 and parts[1] == "BGP":
+            if current:
+                peers.append(current)
+            info = parts[5] if len(parts) >= 6 else parts[3]
+            current = {
                 "neighbor": parts[0],
                 "remote_asn": "?",
-                "state": state,
-            })
+                "state": info.lower(),
+            }
+        elif current and line.strip().startswith("Neighbor address:"):
+            current["neighbor_ip"] = line.split(":", 1)[1].strip()
+        elif current and line.strip().startswith("Neighbor AS:"):
+            current["remote_asn"] = line.split(":", 1)[1].strip()
+        elif current and line.strip().startswith("BGP state:"):
+            bgp_state = line.split(":", 1)[1].strip().lower()
+            # header "down" + BGP state "down" = admin disabled
+            if current["state"] == "down" and bgp_state == "down":
+                current["state"] = "admin down"
+            else:
+                current["state"] = bgp_state
+    if current:
+        peers.append(current)
     return peers
 
 
@@ -284,12 +302,28 @@ def _parse_frr_peers(output: str) -> list[dict]:
         state = info.get("state", "unknown")
         if state == "Established":
             state = "established"
+        elif "Admin" in state:
+            state = "admin down"
         peers.append({
             "neighbor": addr,
             "remote_asn": info.get("remoteAs", "?"),
             "state": state,
         })
     return peers
+
+
+def _build_peer_name_map(config: LabConfig) -> dict[str, str]:
+    """Build mapping to resolve peer identifiers to router names.
+
+    Maps both bare IPs and BIRD safe names (underscored) to original router names.
+    """
+    name_map: dict[str, str] = {}
+    for link in config.links:
+        for peer in link.peers:
+            bare_ip = peer.ip.split("/")[0]
+            name_map[bare_ip] = peer.router
+            name_map[peer.router.replace("-", "_")] = peer.router
+    return name_map
 
 
 def show_bgp_peers(lab_name: str) -> None:
@@ -305,10 +339,12 @@ def show_bgp_peers(lab_name: str) -> None:
         print(f"No running containers in lab '{lab_name}'.")
         return
 
-    print(f"{'ROUTER':<30} {'NEIGHBOR':<18} {'REMOTE AS':<12} {'STATE':<15}")
+    config = _load_lab_config(lab_name, podman)
+    name_map = _build_peer_name_map(config)
+
+    print(f"{'ROUTER':<20} {'PEER':<20} {'PEER IP':<18} {'REMOTE AS':<12} {'STATE':<15}")
     for c in running:
         container_name = c["Names"][0]
-        labels = c.get("Labels", {})
         image = c.get("Image", "")
 
         # Determine kind from image name
@@ -318,7 +354,7 @@ def show_bgp_peers(lab_name: str) -> None:
             if result.returncode == 0 and result.stdout.strip():
                 peers = _parse_gobgp_peers(result.stdout)
         elif "bird" in image:
-            result = podman.container_exec(container_name, ["birdc", "show", "protocols"])
+            result = podman.container_exec(container_name, ["birdc", "show", "protocols", "all"])
             if result.returncode == 0 and result.stdout.strip():
                 peers = _parse_bird_peers(result.stdout)
         elif "frr" in image:
@@ -330,10 +366,158 @@ def show_bgp_peers(lab_name: str) -> None:
         display_name = container_name.removeprefix(f"nl-{lab_name}-")
 
         if not peers:
-            print(f"{display_name:<30} {'(no peers)':<18} {'':<12} {'':<15}")
+            print(f"{display_name:<20} {'(no peers)':<20} {'':<18} {'':<12} {'':<15}")
         else:
             for peer in peers:
-                print(f"{display_name:<30} {peer['neighbor']:<18} {str(peer['remote_asn']):<12} {peer['state']:<15}")
+                raw = peer["neighbor"]
+                router_name = name_map.get(raw, raw)
+                # Resolve the peer IP: BIRD provides neighbor_ip, others use raw if it's an IP
+                ip = peer.get("neighbor_ip") or (raw if re.match(r"\d+\.\d+\.\d+\.\d+", raw) else None)
+                if not ip:
+                    ip = _find_peer_ip(config, display_name, router_name) or "?"
+                print(f"{display_name:<20} {router_name:<20} {ip:<18} {str(peer['remote_asn']):<12} {peer['state']:<15}")
+
+
+# ---------------------------------------------------------------------------
+# BGP session control – disable/enable peering between two routers
+# ---------------------------------------------------------------------------
+
+def _find_peer_ip(config: LabConfig, router_a: str, router_b: str) -> str | None:
+    """Find the IP address that router_a uses to peer with router_b."""
+    for link in config.links:
+        peer_names = [p.router for p in link.peers]
+        if router_a in peer_names and router_b in peer_names:
+            for p in link.peers:
+                if p.router == router_b:
+                    return p.ip.split("/")[0]
+    return None
+
+
+def _set_bgp_session(lab_name: str, router_a: str, router_b: str, enable: bool) -> None:
+    """Enable or disable BGP session between two routers."""
+    podman = Podman()
+    config = _load_lab_config(lab_name, podman)
+
+    containers = podman.container_list(label=f"{LABEL_KEY}={lab_name}")
+    running = {
+        c["Names"][0].removeprefix(f"nl-{config.name}-"): c
+        for c in containers if c.get("State") == "running"
+    }
+
+    action = "Enabling" if enable else "Disabling"
+
+    for local, remote in [(router_a, router_b), (router_b, router_a)]:
+        if local not in running:
+            print(f"Router '{local}' not found or not running.", file=sys.stderr)
+            return
+        peer_ip = _find_peer_ip(config, local, remote)
+        if not peer_ip:
+            print(f"No direct link between '{router_a}' and '{router_b}'.", file=sys.stderr)
+            return
+
+        container_name = running[local]["Names"][0]
+        kind = _container_kind(running[local].get("Image", ""))
+
+        print(f"  {action} BGP on {local} toward {remote} ({peer_ip})...")
+        if kind == "gobgp":
+            cmd = ["gobgp", "neighbor", peer_ip, "enable" if enable else "disable"]
+            podman.container_exec(container_name, cmd)
+        elif kind == "bird":
+            proto_name = remote.replace("-", "_")
+            cmd = ["birdc", "enable" if enable else "disable", proto_name]
+            podman.container_exec(container_name, cmd)
+        elif kind == "frr":
+            local_router = next(r for r in config.routers if r.name == local)
+            shutdown_cmd = f"no neighbor {peer_ip} shutdown" if enable else f"neighbor {peer_ip} shutdown"
+            podman.container_exec(container_name, [
+                "vtysh", "-c", "configure terminal",
+                "-c", f"router bgp {local_router.asn}",
+                "-c", shutdown_cmd,
+            ])
+
+    print(f"BGP session between {router_a} and {router_b} {'enabled' if enable else 'disabled'}.")
+
+
+def disable_peer(lab_name: str, router_a: str, router_b: str) -> None:
+    _set_bgp_session(lab_name, router_a, router_b, enable=False)
+
+
+def enable_peer(lab_name: str, router_a: str, router_b: str) -> None:
+    _set_bgp_session(lab_name, router_a, router_b, enable=True)
+
+
+def enable_all_peers(lab_name: str) -> None:
+    """Re-enable all administratively disabled BGP sessions."""
+    podman = Podman()
+
+    containers = podman.container_list(label=f"{LABEL_KEY}={lab_name}")
+    running = [c for c in containers if c.get("State") == "running"]
+    if not running:
+        print(f"No running containers in lab '{lab_name}'.")
+        return
+
+    count = 0
+    for c in running:
+        container_name = c["Names"][0]
+        display_name = container_name.removeprefix(f"nl-{lab_name}-")
+        kind = _container_kind(c.get("Image", ""))
+
+        if kind == "gobgp":
+            result = podman.container_exec(container_name, ["gobgp", "-j", "neighbor"])
+            if not result.stdout.strip():
+                continue
+            try:
+                neighbors = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                continue
+            for n in neighbors:
+                state = n.get("state", {})
+                if state.get("admin_down", False):
+                    addr = state.get("neighbor_address", "?")
+                    print(f"  Enabling {display_name} -> {addr}")
+                    podman.container_exec(container_name, ["gobgp", "neighbor", addr, "enable"])
+                    count += 1
+
+        elif kind == "bird":
+            result = podman.container_exec(container_name, ["birdc", "show", "protocols", "all"])
+            if not result.stdout.strip():
+                continue
+            for line in result.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[1] == "BGP":
+                    proto_state = parts[3].lower()
+                    if proto_state == "down":
+                        proto_name = parts[0]
+                        print(f"  Enabling {display_name} -> {proto_name}")
+                        podman.container_exec(container_name, ["birdc", "enable", proto_name])
+                        count += 1
+
+        elif kind == "frr":
+            result = podman.container_exec(
+                container_name, ["vtysh", "-c", "show bgp summary json"])
+            if not result.stdout.strip():
+                continue
+            try:
+                data = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                continue
+            ipv4 = data.get("ipv4Unicast", {})
+            local_asn = ipv4.get("as", None)
+            for addr, info in ipv4.get("peers", {}).items():
+                state = info.get("state", "")
+                if "Admin" in state or state == "Idle (Admin)":
+                    print(f"  Enabling {display_name} -> {addr}")
+                    podman.container_exec(container_name, [
+                        "vtysh", "-c", "configure terminal",
+                        "-c", f"router bgp {local_asn}",
+                        "-c", f"no neighbor {addr} shutdown",
+                    ])
+                    count += 1
+
+    if count == 0:
+        print("No disabled peers found.")
+    else:
+        print(f"Enabled {count} peer(s).")
 
 
 # ---------------------------------------------------------------------------

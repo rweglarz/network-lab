@@ -63,3 +63,28 @@ def show_bgp_peers(lab_name):
 def trace(lab_name, src, dst):
     """Trace path between two IPs showing BGP route details at each hop."""
     engine.trace_path(lab_name, src, dst)
+
+
+@cli.command("disable-peer")
+@click.argument("lab_name")
+@click.argument("router_a")
+@click.argument("router_b")
+def disable_peer(lab_name, router_a, router_b):
+    """Disable BGP session between two routers."""
+    engine.disable_peer(lab_name, router_a, router_b)
+
+
+@cli.command("enable-peer")
+@click.argument("lab_name")
+@click.argument("router_a")
+@click.argument("router_b")
+def enable_peer(lab_name, router_a, router_b):
+    """Enable BGP session between two routers."""
+    engine.enable_peer(lab_name, router_a, router_b)
+
+
+@cli.command("enable-all-peers")
+@click.argument("lab_name")
+def enable_all_peers(lab_name):
+    """Re-enable all administratively disabled BGP sessions."""
+    engine.enable_all_peers(lab_name)
