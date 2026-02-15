@@ -1,5 +1,11 @@
 FROM alpine:latest
-RUN apk add --no-cache bird2 supervisor
+RUN apk add --no-cache \
+    bash \
+    bird2 \
+    fping \
+    iproute2 \
+    supervisor \
+    tcpdump
 RUN mkdir -p /etc/bird
 COPY supervisord-bird.conf /etc/supervisord.conf
 

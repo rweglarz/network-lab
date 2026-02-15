@@ -97,7 +97,7 @@ def start(config: LabConfig) -> None:
                 name=container_name,
                 hostname=router.name,
                 labels=lab_labels,
-                cap_add=["NET_ADMIN"],
+                cap_add=["NET_ADMIN", "NET_RAW"],
                 network=mgmt_net,
                 volumes=volumes,
             )
