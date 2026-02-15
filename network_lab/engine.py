@@ -554,6 +554,14 @@ def _trace_one_direction(
         # Check if dst_ip is local to this router
         dst_is_local = _find_router_for_ip(dst_ip, ip_map) == current_router
 
+        if dst_is_local:
+            hops.append({
+                "router": current_router,
+                "prefix": "-", "as_path": "origin", "localpref": "-",
+                "communities": "-", "metric": "-",
+            })
+            break
+
         # Get BGP route details
         route_info = _query_bgp_route(podman, container_name, kind, dst_ip)
 
@@ -561,9 +569,6 @@ def _trace_one_direction(
             "router": current_router,
             **route_info,
         })
-
-        if dst_is_local:
-            break
 
         # Get next hop via ip route get
         try:
