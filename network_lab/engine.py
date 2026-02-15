@@ -586,10 +586,10 @@ def _trace_one_direction(
 def _print_trace(direction: str, src_ip: str, dst_ip: str, hops: list[dict]) -> None:
     """Print a formatted trace table."""
     print(f"\n{direction}: {src_ip} -> {dst_ip}")
-    print(f"{'HOP':<5} {'ROUTER':<20} {'PREFIX':<20} {'AS PATH':<20} {'LP':<6} {'MED':<6} {'COMMUNITIES'}")
+    print(f"{'HOP':<5} {'ROUTER':<20} {'PREFIX':<20} {'AS PATH':<30} {'LP':<6} {'MED':<6} {'COMMUNITIES'}")
     for i, hop in enumerate(hops, 1):
         print(f"{i:<5} {hop['router']:<20} {hop['prefix']:<20} "
-              f"{hop['as_path']:<20} {hop['localpref']:<6} {hop['metric']:<6} {hop['communities']}")
+              f"{hop['as_path']:<30} {hop['localpref']:<6} {hop['metric']:<6} {hop['communities']}")
 
 
 def trace_path(lab_name: str, src_ip: str, dst_ip: str) -> None:
