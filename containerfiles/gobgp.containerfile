@@ -4,7 +4,9 @@ RUN go install github.com/osrg/gobgp/v3/cmd/gobgp@latest
 RUN go install github.com/osrg/gobgp/v3/cmd/gobgpd@latest
 
 FROM alpine:latest
+RUN apk add --no-cache supervisor
 COPY --from=builder /go/bin/gobgp /usr/local/bin/
 COPY --from=builder /go/bin/gobgpd /usr/local/bin/
+COPY supervisord-gobgp.conf /etc/supervisord.conf
 
-CMD ["gobgpd", "-f", "/etc/gobgp/gobgp.conf"]
+CMD ["supervisord", "-c", "/etc/supervisord.conf", "-n"]

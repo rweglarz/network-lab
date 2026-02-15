@@ -1,4 +1,0 @@
-FROM alpine:latest
-RUN apk add --no-cache bird2
-
-ENTRYPOINT ["/usr/sbin/bird", "-c", "/etc/bird.conf", "-d"]

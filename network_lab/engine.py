@@ -9,10 +9,10 @@ from network_lab.podman import Podman, PodmanError
 
 LABEL_KEY = "nl-lab"
 
-# Map kind name to (config mount path, daemon command)
+# Map kind name to config mount path inside the container
 KIND_CONFIG = {
-    "gobgp": ("/etc/gobgp/gobgp.conf", ["gobgpd", "-f", "/etc/gobgp/gobgp.conf"]),
-    "bird": ("/etc/bird/bird.conf", ["bird", "-f"]),
+    "gobgp": "/etc/gobgp/gobgp.conf",
+    "bird": "/etc/bird/bird.conf",
 }
 
 
@@ -81,12 +81,10 @@ def start(config: LabConfig) -> None:
         image = config.image_for_router(router.name)
         kind = config.kind_for_router(router.name)
 
-        # Mount config and set daemon command
-        kind_conf = KIND_CONFIG.get(kind.name)
+        # Mount config file into the container
+        mount_path = KIND_CONFIG.get(kind.name)
         volumes = []
-        command = ["sleep", "infinity"]
-        if kind_conf:
-            mount_path, command = kind_conf
+        if mount_path:
             host_path = config_paths[router.name]
             volumes = [f"{host_path}:{mount_path}:ro,Z"]
 
@@ -100,7 +98,6 @@ def start(config: LabConfig) -> None:
                 cap_add=["NET_ADMIN"],
                 network=mgmt_net,
                 volumes=volumes,
-                command=command,
             )
         except PodmanError as e:
             print(f"  Error: {e}", file=sys.stderr)
