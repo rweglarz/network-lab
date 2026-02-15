@@ -139,6 +139,22 @@ def start(config: LabConfig) -> None:
             podman.container_exec(container_name, ["ip", "addr", "add", host_ip, "dev", iface])
             podman.container_exec(container_name, ["ip", "link", "set", iface, "up"])
 
+    # Inject network prefixes into gobgp RIB (gobgp doesn't redistribute connected routes)
+    for router in config.routers:
+        kind = config.kind_for_router(router.name)
+        if kind.name != "gobgp":
+            continue
+        router_nets = config.networks.get(router.name, [])
+        if not router_nets:
+            continue
+        container_name = config.container_name(router.name)
+        for net in router_nets:
+            cmd = ["gobgp", "global", "rib", "add", net.prefix]
+            if net.community:
+                cmd.extend(["community", net.community])
+            print(f"  Injecting {net.prefix} into gobgp on {container_name}...")
+            podman.container_exec(container_name, cmd)
+
     print(f"Lab '{config.name}' started successfully.")
 
 
