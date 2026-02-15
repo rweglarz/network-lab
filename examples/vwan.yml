@@ -84,15 +84,24 @@ links:
       vwan-us-west:
         ip: 192.168.2.1/30
   - peers:
+      prisma-eu-west:
+        ip: 192.168.2.6/30
+      vwan-eu-west:
+        ip: 192.168.2.5/30
+  - peers:
       vwan-us-east:
-        ip: 192.168.3.2/30
+        ip: 192.168.3.4/29
+      vwan-us-west:
+        ip: 192.168.3.3/29
       dc-us-east:
-        ip: 192.168.3.1/30
+        ip: 192.168.3.1/29
   - peers:
       vwan-eu-west:
-        ip: 192.168.3.6/30
+        ip: 192.168.3.10/29
+      vwan-eu-north:
+        ip: 192.168.3.11/29
       dc-eu-west:
-        ip: 192.168.3.5/30
+        ip: 192.168.3.9/29
 
 networks:
   prisma-eu-west:
