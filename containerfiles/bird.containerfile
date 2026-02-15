@@ -5,7 +5,8 @@ RUN apk add --no-cache \
     fping \
     iproute2 \
     supervisor \
-    tcpdump
+    tcpdump \
+    traceroute
 RUN mkdir -p /etc/bird
 COPY supervisord-bird.conf /etc/supervisord.conf
 

@@ -9,7 +9,8 @@ RUN apk add --no-cache \
     fping \
     iproute2 \
     supervisor \
-    tcpdump
+    tcpdump \
+    traceroute
 COPY --from=builder /go/bin/gobgp /usr/local/bin/
 COPY --from=builder /go/bin/gobgpd /usr/local/bin/
 COPY supervisord-gobgp.conf /etc/supervisord.conf

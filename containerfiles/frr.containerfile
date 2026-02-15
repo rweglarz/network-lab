@@ -5,7 +5,8 @@ RUN apk add --no-cache \
     fping \
     iproute2 \
     supervisor \
-    tcpdump
+    tcpdump \
+    traceroute
 RUN sed -i 's/bgpd=no/bgpd=yes/' /etc/frr/daemons && \
     sed -i 's/zebra=no/zebra=yes/' /etc/frr/daemons
 COPY supervisord-frr.conf /etc/supervisord.conf
