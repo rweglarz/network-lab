@@ -43,6 +43,19 @@ routers:
 
 links:
   - peers:
+      prisma-eu-west:
+        interface: eth9
+        ip: 192.168.250.1/24
+      prisma-eu-north:
+        interface: eth9
+        ip: 192.168.250.2/24
+      prisma-us-east:
+        interface: eth9
+        ip: 192.168.250.3/24
+      prisma-us-west:
+        interface: eth9
+        ip: 192.168.250.4/24
+  - peers:
       vwan-eu-west:
         interface: eth9
         ip: 192.168.240.1/24
@@ -59,51 +72,29 @@ links:
       - 65520
       - 65520
   - peers:
-      prisma-eu-west:
-        interface: eth9
-        ip: 192.168.250.1/24
-      prisma-eu-north:
-        interface: eth9
-        ip: 192.168.250.2/24
-      prisma-us-east:
-        interface: eth9
-        ip: 192.168.250.3/24
-      prisma-us-west:
-        interface: eth9
-        ip: 192.168.250.4/24
-  - peers:
-      vwan-us-west:
-        ip: 192.168.2.1/30
-      prisma-us-east:
-        ip: 192.168.2.2/30
-  - peers:
       dc-us-east:
-        ip: 192.168.3.1/30
-      vwan-us-east:
-        ip: 192.168.3.2/30
-  - peers:
-      dc-eu-west:
-        ip: 192.168.3.5/30
-      vwan-eu-west:
-        ip: 192.168.3.6/30
-  - peers:
-      dc-us-east:
+        interface: eth9
         ip: 192.168.230.1/30
       dc-eu-west:
+        interface: eth9
         ip: 192.168.230.2/30
+  - peers:
+      prisma-us-east:
+        ip: 192.168.2.2/30
+      vwan-us-west:
+        ip: 192.168.2.1/30
+  - peers:
+      vwan-us-east:
+        ip: 192.168.3.2/30
+      dc-us-east:
+        ip: 192.168.3.1/30
+  - peers:
+      vwan-eu-west:
+        ip: 192.168.3.6/30
+      dc-eu-west:
+        ip: 192.168.3.5/30
 
 networks:
-  vwan-eu-west:
-    - prefix: 172.16.11.0/24
-      community: 12076:50002
-    - prefix: 172.16.12.0/24
-      community: 12076:50002
-    - prefix: 172.16.13.0/24
-  vwan-eu-north:
-    - prefix: 172.16.21.0/24
-      community: 12076:50003
-    - prefix: 172.16.22.0/24
-      community: 12076:50003
   prisma-eu-west:
     - prefix: 172.16.111.0/24
       community: "65534:11"
@@ -114,3 +105,20 @@ networks:
       community: "65534:13"
     - prefix: 172.16.132.0/24
       community: "65534:13"
+  vwan-eu-west:
+    - prefix: 172.17.11.0/24
+      community: 12076:50002
+    - prefix: 172.17.12.0/24
+      community: 12076:50002
+    - prefix: 172.17.13.0/24
+  vwan-eu-north:
+    - prefix: 172.17.21.0/24
+      community: 12076:50003
+    - prefix: 172.17.22.0/24
+      community: 12076:50003
+  dc-eu-west:
+    - prefix: 172.18.211.0/24
+    - prefix: 172.18.212.0/24
+  dc-us-east:
+    - prefix: 172.18.231.0/24
+    - prefix: 172.18.232.0/24
