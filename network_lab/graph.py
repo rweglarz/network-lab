@@ -141,12 +141,14 @@ def _build_dot(config: LabConfig, down_peers: set[tuple[str, str]] | None = None
             g.node(hub_id, **hub_attrs)
 
             for peer_name in peer_names:
-                any_down = any(
-                    tuple(sorted([peer_name, other])) in down_peers
-                    for other in peer_names if other != peer_name
-                )
-                attrs = _edge_attrs(any_down)
-                g.edge(hub_id, peer_name, **attrs)
+                g.edge(hub_id, peer_name, **_edge_attrs(False))
+
+            # Draw separate red lines directly between down peer pairs
+            for j, a in enumerate(peer_names):
+                for b in peer_names[j + 1:]:
+                    if tuple(sorted([a, b])) in down_peers:
+                        g.edge(a, b, color="red", penwidth="2.5",
+                               style="dashed", dir="none")
 
     # Add trace path arrows (separate from topology edges)
     if forward_path:
