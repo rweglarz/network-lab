@@ -51,16 +51,16 @@ def start(config: LabConfig) -> None:
 
     lab_labels = {LABEL_KEY: config.name, "nl-config": config.config_path}
 
-    # Build a map of router -> list of (network_name, peer_data) for connection ordering
-    # Assign default interface names (ethN) for peers without an explicit interface
+    # Build a map of router -> list of (network_name, device_data) for connection ordering
+    # Assign default interface names (ethN) for devices without an explicit interface
     router_networks: dict[str, list[tuple[str, dict]]] = {r.name: [] for r in config.routers}
     router_iface_counter: dict[str, int] = {r.name: 1 for r in config.routers}  # eth0 = mgmt
     for i, link in enumerate(config.links):
         net_name = config.network_name(i)
-        for peer in link.peers:
-            iface = peer.interface if peer.interface is not None else f"eth{router_iface_counter[peer.router]}"
-            router_iface_counter[peer.router] += 1
-            router_networks[peer.router].append((net_name, {"interface": iface, "ip": peer.ip}))
+        for device in link.devices:
+            iface = device.interface if device.interface is not None else f"eth{router_iface_counter[device.router]}"
+            router_iface_counter[device.router] += 1
+            router_networks[device.router].append((net_name, {"interface": iface, "ip": device.ip}))
 
     # Generate BGP configs (only if missing)
     print("Generating BGP configs...")
@@ -319,10 +319,10 @@ def _build_peer_name_map(config: LabConfig) -> dict[str, str]:
     """
     name_map: dict[str, str] = {}
     for link in config.links:
-        for peer in link.peers:
-            bare_ip = peer.ip.split("/")[0]
-            name_map[bare_ip] = peer.router
-            name_map[peer.router.replace("-", "_")] = peer.router
+        for device in link.devices:
+            bare_ip = device.ip.split("/")[0]
+            name_map[bare_ip] = device.router
+            name_map[device.router.replace("-", "_")] = device.router
     return name_map
 
 
@@ -385,11 +385,11 @@ def show_bgp_peers(lab_name: str) -> None:
 def _find_peer_ip(config: LabConfig, router_a: str, router_b: str) -> str | None:
     """Find the IP address that router_a uses to peer with router_b."""
     for link in config.links:
-        peer_names = [p.router for p in link.peers]
-        if router_a in peer_names and router_b in peer_names:
-            for p in link.peers:
-                if p.router == router_b:
-                    return p.ip.split("/")[0]
+        device_names = [d.router for d in link.devices]
+        if router_a in device_names and router_b in device_names:
+            for d in link.devices:
+                if d.router == router_b:
+                    return d.ip.split("/")[0]
     return None
 
 
@@ -541,9 +541,9 @@ def _build_ip_map(config: LabConfig) -> dict[str, str]:
     """Build mapping of bare IP address -> router name from links and networks."""
     ip_map: dict[str, str] = {}
     for link in config.links:
-        for peer in link.peers:
-            bare_ip = peer.ip.split("/")[0]
-            ip_map[bare_ip] = peer.router
+        for device in link.devices:
+            bare_ip = device.ip.split("/")[0]
+            ip_map[bare_ip] = device.router
     for router_name, nets in config.networks.items():
         for net in nets:
             network = ip_network(net.prefix, strict=False)

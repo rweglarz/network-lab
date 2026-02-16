@@ -2,7 +2,7 @@ from collections import defaultdict
 
 import graphviz
 
-from network_lab.config import LabConfig
+from network_lab.config import BgpSessionType, LabConfig
 from network_lab.engine import (
     _load_lab_config, _container_kind, _parse_gobgp_peers,
     _parse_bird_peers, _parse_frr_peers, _build_peer_name_map,
@@ -114,41 +114,53 @@ def _build_dot(config: LabConfig, down_peers: set[tuple[str, str]] | None = None
         if router.name not in clustered_routers:
             _add_router_node(g, config, router)
 
-    # Add edges — use hub nodes for mesh links (>2 peers)
-    for i, link in enumerate(config.links):
-        peer_names = [p.router for p in link.peers]
+    # Add edges from BGP sessions
+    for i, session in enumerate(config.bgp_sessions):
+        routers = session.routers
 
-        if len(peer_names) <= 2:
-            # Point-to-point link: direct edge
-            if len(peer_names) == 2:
-                a, b = peer_names
+        if session.type == BgpSessionType.PEERS or (session.type == BgpSessionType.RR):
+            # Point-to-point or RR: direct edges between pairs
+            if session.type == BgpSessionType.PEERS and len(routers) == 2:
+                a, b = routers
                 pair = tuple(sorted([a, b]))
                 is_down = pair in down_peers
-                attrs = _edge_attrs(is_down)
-                g.edge(a, b, **attrs)
-        else:
-            # Mesh link: add a small hub dot, connect all peers to it
-            hub_id = f"_hub_{i}"
-            hub_attrs = {
-                "shape": "point", "width": "0.15", "height": "0.15",
-                "fillcolor": "#666666", "color": "#666666",
-                "style": "filled", "label": "",
-            }
-            if link.graph_pos:
-                gv_x = link.graph_pos[0] / 72
-                gv_y = link.graph_pos[1] / 72
-                hub_attrs["pos"] = f"{gv_x},{gv_y}!"
-            g.node(hub_id, **hub_attrs)
+                g.edge(a, b, **_edge_attrs(is_down))
+            elif session.type == BgpSessionType.RR:
+                server = session.rr_server
+                for client in session.rr_clients:
+                    pair = tuple(sorted([server, client]))
+                    is_down = pair in down_peers
+                    g.edge(server, client, **_edge_attrs(is_down))
+        elif session.type == BgpSessionType.MESH:
+            if len(routers) <= 2:
+                if len(routers) == 2:
+                    a, b = routers
+                    pair = tuple(sorted([a, b]))
+                    is_down = pair in down_peers
+                    g.edge(a, b, **_edge_attrs(is_down))
+            else:
+                # Mesh: add a small hub dot, connect all routers to it
+                hub_id = f"_hub_{i}"
+                hub_attrs = {
+                    "shape": "point", "width": "0.15", "height": "0.15",
+                    "fillcolor": "#666666", "color": "#666666",
+                    "style": "filled", "label": "",
+                }
+                if session.graph_pos:
+                    gv_x = session.graph_pos[0] / 72
+                    gv_y = session.graph_pos[1] / 72
+                    hub_attrs["pos"] = f"{gv_x},{gv_y}!"
+                g.node(hub_id, **hub_attrs)
 
-            for peer_name in peer_names:
-                g.edge(hub_id, peer_name, **_edge_attrs(False))
+                for router_name in routers:
+                    g.edge(hub_id, router_name, **_edge_attrs(False))
 
-            # Draw separate red lines directly between down peer pairs
-            for j, a in enumerate(peer_names):
-                for b in peer_names[j + 1:]:
-                    if tuple(sorted([a, b])) in down_peers:
-                        g.edge(a, b, color="red", penwidth="2.5",
-                               style="dashed", dir="none")
+                # Draw separate red lines directly between down peer pairs
+                for j, a in enumerate(routers):
+                    for b in routers[j + 1:]:
+                        if tuple(sorted([a, b])) in down_peers:
+                            g.edge(a, b, color="red", penwidth="2.5",
+                                   style="dashed", dir="none")
 
     # Add trace path arrows (separate from topology edges)
     if forward_path:

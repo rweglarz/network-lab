@@ -10,7 +10,11 @@ kinds:
       image: localhost/bird:latest
 
 routers:
-  prisma-mu-us-east:
+  prisma-mu-us-east1:
+    asn: 65534
+    kind: frr
+    graph_pos: [-150, 200]
+  prisma-mu-us-east2:
     asn: 65534
     kind: frr
     graph_pos: [-100, 200]
@@ -60,7 +64,7 @@ routers:
     graph_pos: [125, -150]
 
 links:
-  - peers:
+  - devices:
       prisma-sc-eu-west:
         interface: eth9
         ip: 192.168.250.1/24
@@ -70,24 +74,24 @@ links:
       prisma-sc-us-east:
         interface: eth9
         ip: 192.168.250.3/24
-    graph_pos: [0, 125]
-  - peers:
-      prisma-mu-eu-west:
-        ip: 192.168.251.1/30
+  - devices:
       prisma-sc-eu-west:
-        ip: 192.168.251.2/30
-  - peers:
-      prisma-mu-eu-north:
-        ip: 192.168.251.5/30
+        ip: 192.168.251.1/29
+      prisma-mu-eu-west:
+        ip: 192.168.251.2/29
+  - devices:
       prisma-sc-eu-north:
-        ip: 192.168.251.6/30
-  - peers:
-      prisma-mu-us-east:
-        ip: 192.168.251.9/30
+        ip: 192.168.251.9/29
+      prisma-mu-eu-north:
+        ip: 192.168.251.10/29
+  - devices:
       prisma-sc-us-east:
-        ip: 192.168.251.10/30
-    graph_pos: [0, 175]
-  - peers:
+        ip: 192.168.251.17/29
+      prisma-mu-us-east1:
+        ip: 192.168.251.18/29
+      prisma-mu-us-east2:
+        ip: 192.168.251.19/29
+  - devices:
       vwan-eu-west:
         interface: eth9
         ip: 192.168.240.1/24
@@ -100,53 +104,102 @@ links:
       vwan-us-east:
         interface: eth9
         ip: 192.168.240.4/24
-    as_prepend:
-      - 65520
-      - 65520
-    graph_pos: [0, 25]
-  - peers:
+  - devices:
       dc-us-east:
         interface: eth9
         ip: 192.168.230.1/30
       dc-eu-west:
         interface: eth9
         ip: 192.168.230.2/30
-  - peers:
+  - devices:
       prisma-sc-us-east:
         ip: 192.168.2.2/30
       vwan-us-east:
         ip: 192.168.2.1/30
-  - peers:
+  - devices:
       prisma-sc-eu-west:
         ip: 192.168.2.6/30
       vwan-eu-west:
         ip: 192.168.2.5/30
-  - peers:
+  - devices:
       prisma-sc-eu-north:
         ip: 192.168.2.10/30
       vwan-eu-north:
         ip: 192.168.2.9/30
-  - peers:
+  - devices:
       vwan-us-east:
         ip: 192.168.3.4/29
       vwan-us-west:
         ip: 192.168.3.3/29
       dc-us-east:
         ip: 192.168.3.1/29
-    graph_pos: [-125, -75]
-  - peers:
+  - devices:
       vwan-eu-west:
         ip: 192.168.3.10/29
       vwan-eu-north:
         ip: 192.168.3.11/29
       dc-eu-west:
         ip: 192.168.3.9/29
+
+bgp:
+  # Prisma SC mesh (iBGP)
+  - mesh:
+      - prisma-sc-eu-west
+      - prisma-sc-eu-north
+      - prisma-sc-us-east
+    graph_pos: [0, 125]
+  # Prisma SC -> MU route reflector relationships
+  - rr_server: prisma-sc-eu-west
+    rr_clients:
+      - prisma-mu-eu-west
+  - rr_server: prisma-sc-eu-north
+    rr_clients:
+      - prisma-mu-eu-north
+  - rr_server: prisma-sc-us-east
+    rr_clients:
+      - prisma-mu-us-east1
+      - prisma-mu-us-east2
+  # VWAN hub mesh with AS prepend (simulates Azure hub-hub)
+  - mesh:
+      - vwan-eu-west
+      - vwan-eu-north
+      - vwan-us-west
+      - vwan-us-east
+    as_prepend:
+      - 65520
+      - 65520
+    graph_pos: [0, 25]
+  # DC interconnect
+  - peers:
+      - dc-us-east
+      - dc-eu-west
+  # Prisma SC <-> VWAN cross-connect
+  - peers:
+      - prisma-sc-us-east
+      - vwan-us-east
+  - peers:
+      - prisma-sc-eu-west
+      - vwan-eu-west
+  - peers:
+      - prisma-sc-eu-north
+      - vwan-eu-north
+  # VWAN + DC regional meshes
+  - mesh:
+      - vwan-us-east
+      - vwan-us-west
+      - dc-us-east
+    graph_pos: [-125, -75]
+  - mesh:
+      - vwan-eu-west
+      - vwan-eu-north
+      - dc-eu-west
     graph_pos: [125, -75]
 
 networks:
-  prisma-mu-us-east:
+  prisma-mu-us-east1:
     - prefix: 172.16.131.0/24
       community: "65534:33"
+  prisma-mu-us-east2:
     - prefix: 172.16.132.0/24
       community: "65534:33"
   prisma-mu-eu-west:

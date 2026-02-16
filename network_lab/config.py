@@ -1,11 +1,12 @@
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 
 import yaml
 
 
 @dataclass
-class Peer:
+class Device:
     router: str
     interface: str | None
     ip: str
@@ -13,8 +14,7 @@ class Peer:
 
 @dataclass
 class Link:
-    peers: list[Peer]
-    as_prepend: list[int] = field(default_factory=list)
+    devices: list[Device]
     graph_pos: list[float] | None = None
 
 
@@ -38,6 +38,22 @@ class Kind:
     image: str
 
 
+class BgpSessionType(Enum):
+    MESH = "mesh"
+    PEERS = "peers"
+    RR = "rr"
+
+
+@dataclass
+class BgpSession:
+    type: BgpSessionType
+    routers: list[str]
+    rr_server: str | None = None
+    rr_clients: list[str] = field(default_factory=list)
+    as_prepend: list[int] = field(default_factory=list)
+    graph_pos: list[float] | None = None
+
+
 @dataclass
 class LabConfig:
     name: str
@@ -45,6 +61,7 @@ class LabConfig:
     kinds: list[Kind] = field(default_factory=list)
     routers: list[Router] = field(default_factory=list)
     links: list[Link] = field(default_factory=list)
+    bgp_sessions: list[BgpSession] = field(default_factory=list)
     networks: dict[str, list[Network]] = field(default_factory=dict)
 
     @property
@@ -98,16 +115,43 @@ def parse_config(path: str) -> LabConfig:
 
     links = []
     for link_entry in raw.get("links", []):
-        peers = []
-        for peer_name, peer_data in link_entry["peers"].items():
-            peers.append(Peer(
-                router=peer_name,
-                interface=peer_data.get("interface"),
-                ip=peer_data["ip"],
+        devices = []
+        for dev_name, dev_data in link_entry["devices"].items():
+            devices.append(Device(
+                router=dev_name,
+                interface=dev_data.get("interface"),
+                ip=dev_data["ip"],
             ))
-        as_prepend = link_entry.get("as_prepend", [])
         graph_pos = link_entry.get("graph_pos")
-        links.append(Link(peers=peers, as_prepend=as_prepend, graph_pos=graph_pos))
+        links.append(Link(devices=devices, graph_pos=graph_pos))
+
+    bgp_sessions = []
+    for bgp_entry in raw.get("bgp", []):
+        if "mesh" in bgp_entry:
+            bgp_sessions.append(BgpSession(
+                type=BgpSessionType.MESH,
+                routers=bgp_entry["mesh"],
+                as_prepend=bgp_entry.get("as_prepend", []),
+                graph_pos=bgp_entry.get("graph_pos"),
+            ))
+        elif "peers" in bgp_entry:
+            bgp_sessions.append(BgpSession(
+                type=BgpSessionType.PEERS,
+                routers=bgp_entry["peers"],
+                as_prepend=bgp_entry.get("as_prepend", []),
+                graph_pos=bgp_entry.get("graph_pos"),
+            ))
+        elif "rr_server" in bgp_entry:
+            server = bgp_entry["rr_server"]
+            clients = bgp_entry.get("rr_clients", [])
+            bgp_sessions.append(BgpSession(
+                type=BgpSessionType.RR,
+                routers=[server] + clients,
+                rr_server=server,
+                rr_clients=clients,
+                as_prepend=bgp_entry.get("as_prepend", []),
+                graph_pos=bgp_entry.get("graph_pos"),
+            ))
 
     networks: dict[str, list[Network]] = {}
     for router_name, net_entries in raw.get("networks", {}).items():
@@ -125,5 +169,6 @@ def parse_config(path: str) -> LabConfig:
         kinds=kinds,
         routers=routers,
         links=links,
+        bgp_sessions=bgp_sessions,
         networks=networks,
     )

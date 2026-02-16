@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from ipaddress import ip_interface
 
-from network_lab.config import LabConfig, Network, Router
+from network_lab.config import BgpSessionType, LabConfig, Network, Router
 
 
 @dataclass
@@ -10,34 +10,102 @@ class Neighbor:
     ip: str
     remote_asn: int
     as_prepend: list[int] = field(default_factory=list)
+    rr_client: bool = False
 
 
 def get_router_id(config: LabConfig, router_name: str) -> str:
     """Derive router-id from the first link IP of this router."""
     for link in config.links:
-        for peer in link.peers:
-            if peer.router == router_name:
-                return str(ip_interface(peer.ip).ip)
+        for device in link.devices:
+            if device.router == router_name:
+                return str(ip_interface(device.ip).ip)
     return "0.0.0.0"
 
 
+def _find_peer_ip_from_links(config: LabConfig, router_a: str, router_b: str) -> str | None:
+    """Find the IP that router_b uses on a link shared with router_a."""
+    for link in config.links:
+        device_names = [d.router for d in link.devices]
+        if router_a in device_names and router_b in device_names:
+            for d in link.devices:
+                if d.router == router_b:
+                    return str(ip_interface(d.ip).ip)
+    return None
+
+
 def get_neighbors(config: LabConfig, router_name: str) -> list[Neighbor]:
-    """Derive BGP neighbors from links: other peers on the same link are neighbors."""
+    """Derive BGP neighbors from bgp sessions."""
     router_asns = {r.name: r.asn for r in config.routers}
     neighbors = []
+    seen: set[str] = set()
 
-    for link in config.links:
-        peer_names = [p.router for p in link.peers]
-        if router_name not in peer_names:
+    for session in config.bgp_sessions:
+        if router_name not in session.routers:
             continue
-        for peer in link.peers:
-            if peer.router == router_name:
+
+        if session.type == BgpSessionType.MESH:
+            for other in session.routers:
+                if other == router_name or other in seen:
+                    continue
+                remote_asn = router_asns.get(other)
+                if remote_asn is None:
+                    continue
+                peer_ip = _find_peer_ip_from_links(config, router_name, other)
+                if peer_ip is None:
+                    raise ValueError(f"No link connecting {router_name} and {other} for BGP session")
+                seen.add(other)
+                neighbors.append(Neighbor(
+                    name=other, ip=peer_ip, remote_asn=remote_asn,
+                    as_prepend=session.as_prepend,
+                ))
+
+        elif session.type == BgpSessionType.PEERS:
+            other = [r for r in session.routers if r != router_name][0]
+            if other in seen:
                 continue
-            remote_asn = router_asns.get(peer.router)
+            remote_asn = router_asns.get(other)
             if remote_asn is None:
                 continue
-            neighbor_ip = str(ip_interface(peer.ip).ip)
-            neighbors.append(Neighbor(name=peer.router, ip=neighbor_ip, remote_asn=remote_asn, as_prepend=link.as_prepend))
+            peer_ip = _find_peer_ip_from_links(config, router_name, other)
+            if peer_ip is None:
+                raise ValueError(f"No link connecting {router_name} and {other} for BGP session")
+            seen.add(other)
+            neighbors.append(Neighbor(
+                name=other, ip=peer_ip, remote_asn=remote_asn,
+                as_prepend=session.as_prepend,
+            ))
+
+        elif session.type == BgpSessionType.RR:
+            if router_name == session.rr_server:
+                for client in session.rr_clients:
+                    if client in seen:
+                        continue
+                    remote_asn = router_asns.get(client)
+                    if remote_asn is None:
+                        continue
+                    peer_ip = _find_peer_ip_from_links(config, router_name, client)
+                    if peer_ip is None:
+                        raise ValueError(f"No link connecting {router_name} and {client}")
+                    seen.add(client)
+                    neighbors.append(Neighbor(
+                        name=client, ip=peer_ip, remote_asn=remote_asn,
+                        as_prepend=session.as_prepend, rr_client=True,
+                    ))
+            else:
+                other = session.rr_server
+                if other in seen:
+                    continue
+                remote_asn = router_asns.get(other)
+                if remote_asn is None:
+                    continue
+                peer_ip = _find_peer_ip_from_links(config, router_name, other)
+                if peer_ip is None:
+                    raise ValueError(f"No link connecting {router_name} and {other}")
+                seen.add(other)
+                neighbors.append(Neighbor(
+                    name=other, ip=peer_ip, remote_asn=remote_asn,
+                    as_prepend=session.as_prepend,
+                ))
 
     return neighbors
 
@@ -115,6 +183,13 @@ def generate_gobgp_config(router: Router, router_id: str, neighbors: list[Neighb
             f'    description = "{n.name}"',
         ])
 
+        if n.rr_client:
+            lines.extend([
+                "  [neighbors.route-reflector.config]",
+                "    route-reflector-client = true",
+                f'    route-reflector-cluster-id = "{router_id}"',
+            ])
+
         # Build per-neighbor export policy list
         neighbor_policies = []
         if community_nets:
@@ -190,8 +265,10 @@ def generate_bird_config(router: Router, router_id: str, neighbors: list[Neighbo
             f"protocol bgp {bird_name} {{",
             f"  local as {router.asn};",
             f"  neighbor {n.ip} as {n.remote_asn};",
-            "  ipv4 {",
         ])
+        if n.rr_client:
+            lines.append("  rr client;")
+        lines.append("  ipv4 {")
         if is_ibgp:
             lines.append("    next hop self;")
         lines.append("    import all;")
@@ -291,6 +368,8 @@ def generate_frr_config(router: Router, router_id: str, neighbors: list[Neighbor
         safe_neighbor = n.name.replace("-", "_")
         if n.remote_asn == router.asn:
             lines.append(f"    neighbor {n.ip} next-hop-self")
+        if n.rr_client:
+            lines.append(f"    neighbor {n.ip} route-reflector-client")
         lines.append(f"    neighbor {n.ip} route-map IMPORT-ALLOW in")
         lines.append(f"    neighbor {n.ip} route-map EXPORT-{safe_neighbor} out")
 
