@@ -13,33 +13,43 @@ routers:
   vwan-eu-west:
     asn: 65515
     kind: frr
+    graph_pos: [100, 0]
   vwan-eu-north:
     asn: 65515
     kind: frr
+    graph_pos: [150, 0]
   vwan-us-west:
     asn: 65515
     kind: frr
+    graph_pos: [-150, 0]
   vwan-us-east:
     asn: 65515
     kind: frr
+    graph_pos: [-100, 0]
   prisma-us-east:
     asn: 65534
     kind: frr
+    graph_pos: [-100, 100]
   prisma-eu-west:
     asn: 65534
     kind: frr
+    graph_pos: [100, 100]
   prisma-eu-north:
     asn: 65534
     kind: frr
+    graph_pos: [150, 100]
   prisma-us-west:
     asn: 65534
     kind: frr
+    graph_pos: [-150, 100]
   dc-us-east:
     asn: 65501
     kind: bird
+    graph_pos: [-125, -150]
   dc-eu-west:
     asn: 65502
     kind: bird
+    graph_pos: [125, -150]
 
 links:
   - peers:
@@ -55,6 +65,7 @@ links:
       prisma-us-west:
         interface: eth9
         ip: 192.168.250.4/24
+    graph_pos: [0, 100]
   - peers:
       vwan-eu-west:
         interface: eth9
@@ -71,6 +82,7 @@ links:
     as_prepend:
       - 65520
       - 65520
+    graph_pos: [0, 25]
   - peers:
       dc-us-east:
         interface: eth9
@@ -95,6 +107,7 @@ links:
         ip: 192.168.3.3/29
       dc-us-east:
         ip: 192.168.3.1/29
+    graph_pos: [-125, -75]
   - peers:
       vwan-eu-west:
         ip: 192.168.3.10/29
@@ -102,6 +115,7 @@ links:
         ip: 192.168.3.11/29
       dc-eu-west:
         ip: 192.168.3.9/29
+    graph_pos: [125, -75]
 
 networks:
   prisma-eu-west:

@@ -15,6 +15,7 @@ class Peer:
 class Link:
     peers: list[Peer]
     as_prepend: list[int] = field(default_factory=list)
+    graph_pos: list[float] | None = None
 
 
 @dataclass
@@ -22,6 +23,7 @@ class Router:
     name: str
     asn: int | None = None
     kind: str | None = None
+    graph_pos: list[float] | None = None
 
 
 @dataclass
@@ -91,6 +93,7 @@ def parse_config(path: str) -> LabConfig:
             name=router_name,
             asn=router_data.get("asn"),
             kind=router_data.get("kind"),
+            graph_pos=router_data.get("graph_pos"),
         ))
 
     links = []
@@ -103,7 +106,8 @@ def parse_config(path: str) -> LabConfig:
                 ip=peer_data["ip"],
             ))
         as_prepend = link_entry.get("as_prepend", [])
-        links.append(Link(peers=peers, as_prepend=as_prepend))
+        graph_pos = link_entry.get("graph_pos")
+        links.append(Link(peers=peers, as_prepend=as_prepend, graph_pos=graph_pos))
 
     networks: dict[str, list[Network]] = {}
     for router_name, net_entries in raw.get("networks", {}).items():

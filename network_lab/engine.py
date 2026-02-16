@@ -781,8 +781,11 @@ def _print_trace(direction: str, src_ip: str, dst_ip: str, hops: list[dict]) -> 
               f"{hop['as_path']:<30} {hop['localpref']:<6} {hop['metric']:<6} {hop['communities']}")
 
 
-def trace_path(lab_name: str, src_ip: str, dst_ip: str) -> None:
-    """Trace path between two IPs, showing BGP route details at each hop."""
+def trace_path(lab_name: str, src_ip: str, dst_ip: str) -> tuple[list[dict], list[dict]]:
+    """Trace path between two IPs, showing BGP route details at each hop.
+
+    Returns (forward_hops, backward_hops) for optional graph overlay.
+    """
     podman = Podman()
     config = _load_lab_config(lab_name, podman)
 
@@ -790,7 +793,7 @@ def trace_path(lab_name: str, src_ip: str, dst_ip: str) -> None:
     running = [c for c in containers if c.get("State") == "running"]
     if not running:
         print(f"No running containers in lab '{lab_name}'.")
-        return
+        return [], []
 
     ip_map = _build_ip_map(config)
 
@@ -813,3 +816,5 @@ def trace_path(lab_name: str, src_ip: str, dst_ip: str) -> None:
         print(f"\n!! Forward and backward paths differ!")
         print(f"   Forward:  {' -> '.join(forward_routers)}")
         print(f"   Backward: {' -> '.join(backward_routers)}")
+
+    return forward_hops, backward_hops

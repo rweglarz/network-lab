@@ -60,9 +60,29 @@ def show_bgp_peers(lab_name):
 @click.argument("lab_name")
 @click.argument("src")
 @click.argument("dst")
-def trace(lab_name, src, dst):
+@click.option("--graph", "-g", "graph_output", default=None,
+              help="Generate graph with traced path highlighted (output file).")
+@click.option("--png", is_flag=True, help="Output graph as PNG instead of SVG.")
+def trace(lab_name, src, dst, graph_output, png):
     """Trace path between two IPs showing BGP route details at each hop."""
-    engine.trace_path(lab_name, src, dst)
+    forward_hops, backward_hops = engine.trace_path(lab_name, src, dst)
+    if graph_output:
+        from network_lab.graph import generate_trace_graph
+        fmt = "png" if png else "svg"
+        generate_trace_graph(lab_name, forward_hops, backward_hops,
+                             output=graph_output, fmt=fmt)
+
+
+@cli.command("generate-graph")
+@click.argument("lab_name")
+@click.option("-o", "--output", default=None,
+              help="Output file path (png/svg/pdf). Shows interactively if omitted.")
+@click.option("--png", is_flag=True, help="Output as PNG instead of SVG.")
+def generate_graph(lab_name, output, png):
+    """Generate visual representation of the network topology."""
+    from network_lab.graph import generate_graph as _generate_graph
+    fmt = "png" if png else "svg"
+    _generate_graph(lab_name, output=output, fmt=fmt)
 
 
 @cli.command("disable-peer")
