@@ -450,6 +450,9 @@ def enable_all_peers(lab_name: str) -> None:
     """Re-enable all administratively disabled BGP sessions."""
     podman = Podman()
 
+    config = _load_lab_config(lab_name, podman)
+    name_map = _build_peer_name_map(config)
+
     containers = podman.container_list(label=f"{LABEL_KEY}={lab_name}")
     running = [c for c in containers if c.get("State") == "running"]
     if not running:
@@ -474,7 +477,8 @@ def enable_all_peers(lab_name: str) -> None:
                 state = n.get("state", {})
                 if state.get("admin_down", False):
                     addr = state.get("neighbor_address", "?")
-                    print(f"  Enabling {display_name} -> {addr}")
+                    peer_name = name_map.get(addr, addr)
+                    print(f"  Enabling {display_name} -> {peer_name}")
                     podman.container_exec(container_name, ["gobgp", "neighbor", addr, "enable"])
                     count += 1
 
@@ -488,7 +492,8 @@ def enable_all_peers(lab_name: str) -> None:
                     proto_state = parts[3].lower()
                     if proto_state == "down":
                         proto_name = parts[0]
-                        print(f"  Enabling {display_name} -> {proto_name}")
+                        peer_name = name_map.get(proto_name, proto_name)
+                        print(f"  Enabling {display_name} -> {peer_name}")
                         podman.container_exec(container_name, ["birdc", "enable", proto_name])
                         count += 1
 
@@ -506,7 +511,8 @@ def enable_all_peers(lab_name: str) -> None:
             for addr, info in ipv4.get("peers", {}).items():
                 state = info.get("state", "")
                 if "Admin" in state or state == "Idle (Admin)":
-                    print(f"  Enabling {display_name} -> {addr}")
+                    peer_name = name_map.get(addr, addr)
+                    print(f"  Enabling {display_name} -> {peer_name}")
                     podman.container_exec(container_name, [
                         "vtysh", "-c", "configure terminal",
                         "-c", f"router bgp {local_asn}",
