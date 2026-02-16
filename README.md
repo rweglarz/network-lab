@@ -1,5 +1,8 @@
 python tool to create container based network labs
 
+Requires podman.
+Use the build.sh command to build container images beforehand
+
 # basic usage
 ## restart lab
 ```
