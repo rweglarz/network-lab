@@ -10,6 +10,38 @@ kinds:
       image: localhost/bird:latest
 
 routers:
+  prisma-mu-us-east:
+    asn: 65534
+    kind: frr
+    graph_pos: [-100, 200]
+  prisma-mu-eu-west:
+    asn: 65534
+    kind: frr
+    graph_pos: [100, 200]
+  prisma-mu-eu-north:
+    asn: 65534
+    kind: frr
+    graph_pos: [150, 200]
+  prisma-sc-us-east:
+    asn: 65534
+    kind: frr
+    graph_pos: [-100, 150]
+  prisma-sc-eu-west:
+    asn: 65534
+    kind: frr
+    graph_pos: [100, 150]
+  prisma-sc-eu-north:
+    asn: 65534
+    kind: frr
+    graph_pos: [150, 150]
+  vwan-us-west:
+    asn: 65515
+    kind: frr
+    graph_pos: [-150, 50]
+  vwan-us-east:
+    asn: 65515
+    kind: frr
+    graph_pos: [-100, 0]
   vwan-eu-west:
     asn: 65515
     kind: frr
@@ -17,31 +49,7 @@ routers:
   vwan-eu-north:
     asn: 65515
     kind: frr
-    graph_pos: [150, 0]
-  vwan-us-west:
-    asn: 65515
-    kind: frr
-    graph_pos: [-150, 0]
-  vwan-us-east:
-    asn: 65515
-    kind: frr
-    graph_pos: [-100, 0]
-  prisma-us-east:
-    asn: 65534
-    kind: frr
-    graph_pos: [-100, 100]
-  prisma-eu-west:
-    asn: 65534
-    kind: frr
-    graph_pos: [100, 100]
-  prisma-eu-north:
-    asn: 65534
-    kind: frr
-    graph_pos: [150, 100]
-  prisma-us-west:
-    asn: 65534
-    kind: frr
-    graph_pos: [-150, 100]
+    graph_pos: [150, 50]
   dc-us-east:
     asn: 65501
     kind: bird
@@ -53,19 +61,32 @@ routers:
 
 links:
   - peers:
-      prisma-eu-west:
+      prisma-sc-eu-west:
         interface: eth9
         ip: 192.168.250.1/24
-      prisma-eu-north:
+      prisma-sc-eu-north:
         interface: eth9
         ip: 192.168.250.2/24
-      prisma-us-east:
+      prisma-sc-us-east:
         interface: eth9
         ip: 192.168.250.3/24
-      prisma-us-west:
-        interface: eth9
-        ip: 192.168.250.4/24
-    graph_pos: [0, 100]
+    graph_pos: [0, 125]
+  - peers:
+      prisma-mu-eu-west:
+        ip: 192.168.251.1/30
+      prisma-sc-eu-west:
+        ip: 192.168.251.2/30
+  - peers:
+      prisma-mu-eu-north:
+        ip: 192.168.251.5/30
+      prisma-sc-eu-north:
+        ip: 192.168.251.6/30
+  - peers:
+      prisma-mu-us-east:
+        ip: 192.168.251.9/30
+      prisma-sc-us-east:
+        ip: 192.168.251.10/30
+    graph_pos: [0, 175]
   - peers:
       vwan-eu-west:
         interface: eth9
@@ -91,15 +112,20 @@ links:
         interface: eth9
         ip: 192.168.230.2/30
   - peers:
-      prisma-us-east:
+      prisma-sc-us-east:
         ip: 192.168.2.2/30
-      vwan-us-west:
+      vwan-us-east:
         ip: 192.168.2.1/30
   - peers:
-      prisma-eu-west:
+      prisma-sc-eu-west:
         ip: 192.168.2.6/30
       vwan-eu-west:
         ip: 192.168.2.5/30
+  - peers:
+      prisma-sc-eu-north:
+        ip: 192.168.2.10/30
+      vwan-eu-north:
+        ip: 192.168.2.9/30
   - peers:
       vwan-us-east:
         ip: 192.168.3.4/29
@@ -118,22 +144,36 @@ links:
     graph_pos: [125, -75]
 
 networks:
-  prisma-eu-west:
+  prisma-mu-us-east:
+    - prefix: 172.16.131.0/24
+      community: "65534:33"
+    - prefix: 172.16.132.0/24
+      community: "65534:33"
+  prisma-mu-eu-west:
     - prefix: 172.16.111.0/24
       community: "65534:11"
     - prefix: 172.16.112.0/24
       community: "65534:11"
-  prisma-us-east:
-    - prefix: 172.16.131.0/24
-      community: "65534:13"
-    - prefix: 172.16.132.0/24
-      community: "65534:13"
+  prisma-mu-eu-north:
+    - prefix: 172.16.121.0/24
+      community: "65534:22"
+    - prefix: 172.16.122.0/24
+      community: "65534:22"
+  vwan-dc-west:
+    - prefix: 172.17.31.0/24
+      community: 12076:50006
+    - prefix: 172.17.32.0/24
+      community: 12076:50006
+  vwan-dc-east:
+    - prefix: 172.17.41.0/24
+      community: 12076:50004
+    - prefix: 172.17.42.0/24
+      community: 12076:50004
   vwan-eu-west:
     - prefix: 172.17.11.0/24
       community: 12076:50002
     - prefix: 172.17.12.0/24
       community: 12076:50002
-    - prefix: 172.17.13.0/24
   vwan-eu-north:
     - prefix: 172.17.21.0/24
       community: 12076:50003
