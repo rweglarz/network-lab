@@ -96,20 +96,24 @@ links:
       vwan-us-west:
         interface: eth9
   - cidr: 192.168.230.0/30
+    bgp_connect: true
     devices:
       dc-eu-west:
         interface: eth9
       dc-us-east:
         interface: eth9
   - cidr: 192.168.2.0/30
+    bgp_connect: true
     devices:
       prisma-sc-us-east:
       vwan-us-east:
   - cidr: 192.168.2.4/30
+    bgp_connect: true
     devices:
       prisma-sc-eu-west:
       vwan-eu-west:
   - cidr: 192.168.2.8/30
+    bgp_connect: true
     devices:
       prisma-sc-eu-north:
       vwan-eu-north:
@@ -126,9 +130,16 @@ links:
   # VPN backup link (cross-region)
   - cidr: 192.168.4.0/30
     type: vpn
+    bgp_connect: true
     devices:
       dc-us-east:
       vwan-eu-west:
+  - cidr: 192.168.4.4/30
+    type: vpn
+    bgp_connect: true
+    devices:
+      dc-eu-west:
+      vwan-us-east:
 
 bgp:
   # Prisma SC mesh (iBGP)
@@ -158,24 +169,6 @@ bgp:
       - 65520
       - 65520
     graph_pos: [0, 25]
-  # DC interconnect
-  - peers:
-      - dc-us-east
-      - dc-eu-west
-  # Prisma SC <-> VWAN cross-connect
-  - peers:
-      - prisma-sc-us-east
-      - vwan-us-east
-  - peers:
-      - prisma-sc-eu-west
-      - vwan-eu-west
-  - peers:
-      - prisma-sc-eu-north
-      - vwan-eu-north
-  # VPN backup peer (cross-region)
-  - peers:
-      - dc-us-east
-      - vwan-eu-west
   # VWAN + DC regional meshes
   - mesh:
       - vwan-us-east

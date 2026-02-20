@@ -116,6 +116,7 @@ def parse_config(path: str) -> LabConfig:
         ))
 
     links = []
+    auto_bgp_sessions: list[BgpSession] = []
     for link_entry in raw.get("links", []):
         cidr = link_entry.get("cidr")
         raw_devices = link_entry.get("devices", {})
@@ -144,10 +145,18 @@ def parse_config(path: str) -> LabConfig:
                 ip=ip,
             ))
         link_type = link_entry.get("type")
+        bgp_connect = link_entry.get("bgp_connect", False)
         graph_pos = link_entry.get("graph_pos")
         links.append(Link(devices=devices, type=link_type, graph_pos=graph_pos))
 
-    bgp_sessions = []
+        if bgp_connect:
+            router_names = [d.router for d in devices]
+            auto_bgp_sessions.append(BgpSession(
+                type=BgpSessionType.PEERS,
+                routers=router_names,
+            ))
+
+    bgp_sessions = list(auto_bgp_sessions)
     for bgp_entry in raw.get("bgp", []):
         if "mesh" in bgp_entry:
             bgp_sessions.append(BgpSession(
