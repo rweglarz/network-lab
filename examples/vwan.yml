@@ -123,6 +123,12 @@ links:
       dc-eu-west:
       vwan-eu-north:
       vwan-eu-west:
+  # VPN backup link (cross-region)
+  - cidr: 192.168.4.0/30
+    type: vpn
+    devices:
+      dc-us-east:
+      vwan-eu-west:
 
 bgp:
   # Prisma SC mesh (iBGP)
@@ -166,6 +172,10 @@ bgp:
   - peers:
       - prisma-sc-eu-north
       - vwan-eu-north
+  # VPN backup peer (cross-region)
+  - peers:
+      - dc-us-east
+      - vwan-eu-west
   # VWAN + DC regional meshes
   - mesh:
       - vwan-us-east

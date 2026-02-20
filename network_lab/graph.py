@@ -114,6 +114,15 @@ def _build_dot(config: LabConfig, down_peers: set[tuple[str, str]] | None = None
         if router.name not in clustered_routers:
             _add_router_node(g, config, router)
 
+    # Build set of router pairs connected via VPN-type links
+    vpn_pairs: set[tuple[str, str]] = set()
+    for link in config.links:
+        if link.type == "vpn":
+            names = [d.router for d in link.devices]
+            for j, a in enumerate(names):
+                for b in names[j + 1:]:
+                    vpn_pairs.add(tuple(sorted([a, b])))
+
     # Add edges from BGP sessions
     for i, session in enumerate(config.bgp_sessions):
         routers = session.routers
@@ -124,20 +133,23 @@ def _build_dot(config: LabConfig, down_peers: set[tuple[str, str]] | None = None
                 a, b = routers
                 pair = tuple(sorted([a, b]))
                 is_down = pair in down_peers
-                g.edge(a, b, **_edge_attrs(is_down))
+                is_vpn = pair in vpn_pairs
+                g.edge(a, b, **_edge_attrs(is_down, is_vpn))
             elif session.type == BgpSessionType.RR:
                 server = session.rr_server
                 for client in session.rr_clients:
                     pair = tuple(sorted([server, client]))
                     is_down = pair in down_peers
-                    g.edge(server, client, **_edge_attrs(is_down))
+                    is_vpn = pair in vpn_pairs
+                    g.edge(server, client, **_edge_attrs(is_down, is_vpn))
         elif session.type == BgpSessionType.MESH:
             if len(routers) <= 2:
                 if len(routers) == 2:
                     a, b = routers
                     pair = tuple(sorted([a, b]))
                     is_down = pair in down_peers
-                    g.edge(a, b, **_edge_attrs(is_down))
+                    is_vpn = pair in vpn_pairs
+                    g.edge(a, b, **_edge_attrs(is_down, is_vpn))
             else:
                 # Mesh: add a small hub dot, connect all routers to it
                 hub_id = f"_hub_{i}"
@@ -177,12 +189,14 @@ def _build_dot(config: LabConfig, down_peers: set[tuple[str, str]] | None = None
     return g
 
 
-def _edge_attrs(is_down: bool) -> dict:
+def _edge_attrs(is_down: bool, is_vpn: bool = False) -> dict:
     """Return graphviz edge attributes based on link state."""
     if is_down:
         return {"color": "red", "penwidth": "2.5", "style": "dashed", "dir": "none"}
+    elif is_vpn:
+        return {"color": "#888888", "penwidth": "1.5", "dir": "none"}
     else:
-        return {"color": "#888888", "penwidth": "1.2", "dir": "none"}
+        return {"color": "#888888", "penwidth": "3.0", "dir": "none"}
 
 
 def _add_router_node(graph, config: LabConfig, router,

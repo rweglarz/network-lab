@@ -16,6 +16,7 @@ class Device:
 @dataclass
 class Link:
     devices: list[Device]
+    type: str | None = None
     graph_pos: list[float] | None = None
 
 
@@ -142,8 +143,9 @@ def parse_config(path: str) -> LabConfig:
                 interface=dev_data.get("interface"),
                 ip=ip,
             ))
+        link_type = link_entry.get("type")
         graph_pos = link_entry.get("graph_pos")
-        links.append(Link(devices=devices, graph_pos=graph_pos))
+        links.append(Link(devices=devices, type=link_type, graph_pos=graph_pos))
 
     bgp_sessions = []
     for bgp_entry in raw.get("bgp", []):
