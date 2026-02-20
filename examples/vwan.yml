@@ -200,27 +200,31 @@ networks:
       community: "65534:22"
   vwan-dc-west:
     - prefix: 172.17.31.0/24
-      community: 12076:50006
+      community: "12076:50006"
     - prefix: 172.17.32.0/24
-      community: 12076:50006
+      community: "12076:50006"
   vwan-dc-east:
     - prefix: 172.17.41.0/24
-      community: 12076:50004
+      community: "12076:50004"
     - prefix: 172.17.42.0/24
-      community: 12076:50004
+      community: "12076:50004"
   vwan-eu-west:
     - prefix: 172.17.11.0/24
-      community: 12076:50002
+      community: "12076:50002"
     - prefix: 172.17.12.0/24
-      community: 12076:50002
+      community: "12076:50002"
   vwan-eu-north:
     - prefix: 172.17.21.0/24
-      community: 12076:50003
+      community: "12076:50003"
     - prefix: 172.17.22.0/24
-      community: 12076:50003
+      community: "12076:50003"
   dc-eu-west:
     - prefix: 172.18.211.0/24
+      community: "65501:10"
     - prefix: 172.18.212.0/24
+      community: "65501:10"
   dc-us-east:
     - prefix: 172.18.231.0/24
+      community: "65502:20"
     - prefix: 172.18.232.0/24
+      community: "65502:20"

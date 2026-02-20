@@ -234,12 +234,19 @@ def generate_bird_config(router: Router, router_id: str, neighbors: list[Neighbo
         "",
     ]
 
+    # Generate per-neighbor import filters (accept-all, ready for local-pref/MED customization)
+    for n in neighbors:
+        bird_name = n.name.replace("-", "_")
+        lines.extend([
+            f"filter import_{bird_name} {{",
+            "  accept;",
+            "}",
+            "",
+        ])
+
     # Generate per-neighbor export filters combining community tagging and AS prepending
     for n in neighbors:
         bird_name = n.name.replace("-", "_")
-        if not has_communities and not n.as_prepend:
-            continue
-
         lines.append(f"filter export_{bird_name} {{")
         if has_communities:
             for net in networks:
@@ -258,7 +265,6 @@ def generate_bird_config(router: Router, router_id: str, neighbors: list[Neighbo
 
     for n in neighbors:
         bird_name = n.name.replace("-", "_")
-        has_filter = has_communities or n.as_prepend
         is_ibgp = n.remote_asn == router.asn
 
         lines.extend([
@@ -271,11 +277,8 @@ def generate_bird_config(router: Router, router_id: str, neighbors: list[Neighbo
         lines.append("  ipv4 {")
         if is_ibgp:
             lines.append("    next hop self;")
-        lines.append("    import all;")
-        if has_filter:
-            lines.append(f"    export filter export_{bird_name};")
-        else:
-            lines.append("    export all;")
+        lines.append(f"    import filter import_{bird_name};")
+        lines.append(f"    export filter export_{bird_name};")
         lines.extend([
             "  };",
             "}",
@@ -303,15 +306,16 @@ def generate_frr_config(router: Router, router_id: str, neighbors: list[Neighbor
             lines.append(f"ip prefix-list NET-{safe_name} seq 5 permit {net.prefix}")
         lines.append("!")
 
-    # Import permit-all route-map
-    lines.extend([
-        "route-map IMPORT-ALLOW permit 10",
-        "!",
-    ])
-
-    # Per-neighbor export route-maps
+    # Per-neighbor import and export route-maps
     for n in neighbors:
         safe_neighbor = n.name.replace("-", "_")
+
+        # Import route-map (permit-all, ready for local-pref/MED customization)
+        lines.extend([
+            f"route-map IMPORT-{safe_neighbor} permit 10",
+            "!",
+        ])
+
         rm_name = f"EXPORT-{safe_neighbor}"
         seq = 10
 
@@ -370,7 +374,7 @@ def generate_frr_config(router: Router, router_id: str, neighbors: list[Neighbor
             lines.append(f"    neighbor {n.ip} next-hop-self")
         if n.rr_client:
             lines.append(f"    neighbor {n.ip} route-reflector-client")
-        lines.append(f"    neighbor {n.ip} route-map IMPORT-ALLOW in")
+        lines.append(f"    neighbor {n.ip} route-map IMPORT-{safe_neighbor} in")
         lines.append(f"    neighbor {n.ip} route-map EXPORT-{safe_neighbor} out")
 
     lines.extend([
