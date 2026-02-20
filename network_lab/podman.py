@@ -83,5 +83,9 @@ class Podman:
     def container_remove(self, name: str) -> None:
         self._run("rm", "-f", name, check=False)
 
-    def container_exec(self, container: str, command: list[str]) -> subprocess.CompletedProcess:
-        return self._run("exec", container, *command, check=True)
+    def container_cp(self, src: str, container: str, dst: str) -> None:
+        self._run("cp", src, f"{container}:{dst}")
+
+    def container_exec(self, container: str, command: list[str],
+                       check: bool = True) -> subprocess.CompletedProcess:
+        return self._run("exec", container, *command, check=check)

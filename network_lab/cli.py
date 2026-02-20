@@ -103,6 +103,14 @@ def enable_peer(lab_name, router_a, router_b):
     engine.enable_peer(lab_name, router_a, router_b)
 
 
+@cli.command("reload-config")
+@click.argument("lab_name")
+@click.argument("router_name", required=False, default=None)
+def reload_config(lab_name, router_name):
+    """Reload BGP config on a router (or all routers) from local config files."""
+    engine.reload_config(lab_name, router_name)
+
+
 @cli.command("enable-all-peers")
 @click.argument("lab_name")
 def enable_all_peers(lab_name):

@@ -93,7 +93,7 @@ def start(config: LabConfig) -> None:
         volumes = []
         if mount_path:
             host_path = config_paths[router.name]
-            volumes = [f"{host_path}:{mount_path}:ro,Z"]
+            volumes = [f"{host_path}:{mount_path}:Z"]
 
         caps = ["NET_ADMIN", "NET_RAW"]
         if kind.name == "frr":
@@ -444,6 +444,77 @@ def disable_peer(lab_name: str, router_a: str, router_b: str) -> None:
 
 def enable_peer(lab_name: str, router_a: str, router_b: str) -> None:
     _set_bgp_session(lab_name, router_a, router_b, enable=True)
+
+
+def reload_config(lab_name: str, router_name: str | None = None) -> None:
+    """Reload BGP config on running router(s) from local config files."""
+    podman = Podman()
+    config = _load_lab_config(lab_name, podman)
+
+    containers = podman.container_list(label=f"{LABEL_KEY}={lab_name}")
+    running = {
+        c["Names"][0].removeprefix(f"nl-{config.name}-"): c
+        for c in containers if c.get("State") == "running"
+    }
+
+    targets = [router_name] if router_name else list(running.keys())
+    failed = False
+
+    for name in targets:
+        if name not in running:
+            print(f"Router '{name}' not found or not running.", file=sys.stderr)
+            continue
+        c = running[name]
+        container_name = c["Names"][0]
+        kind = _container_kind(c.get("Image", ""))
+
+        # Copy local config into the container.
+        # Editors create new inodes, breaking bind mounts, so we copy to /tmp
+        # then write content into the bind-mounted file to preserve the inode.
+        mount_path = KIND_CONFIG.get(kind)
+        if mount_path:
+            conf_path = _config_dir(config) / f"{name}.conf"
+            if not conf_path.exists():
+                print(f"    Config file not found: {conf_path}", file=sys.stderr)
+                failed = True
+                continue
+            tmp_path = f"/tmp/{name}.conf"
+            podman.container_cp(str(conf_path.resolve()), container_name, tmp_path)
+            podman.container_exec(
+                container_name,
+                ["sh", "-c", f"cat {tmp_path} > {mount_path}"],
+                check=False,
+            )
+
+        print(f"  Reloading {name} ({kind})...")
+        if kind == "bird":
+            result = podman.container_exec(
+                container_name, ["birdc", "configure"], check=False)
+            if result.returncode != 0:
+                # birdc prints errors to stdout
+                for line in result.stdout.strip().splitlines():
+                    if "BIRD" in line and "ready" in line:
+                        continue
+                    print(f"    {line}")
+                failed = True
+            else:
+                print(f"    OK")
+        elif kind == "frr":
+            # Kill bgpd; supervisord restarts it with the updated config
+            podman.container_exec(container_name, ["pkill", "bgpd"], check=False)
+            print(f"    OK (bgpd restarting)")
+        elif kind == "gobgp":
+            # gobgpd re-reads config on SIGHUP
+            podman.container_exec(container_name, ["pkill", "-HUP", "gobgpd"], check=False)
+            print(f"    OK")
+        else:
+            print(f"  Unknown kind '{kind}', skipping.")
+            continue
+
+    if failed:
+        print("Done (with errors).")
+    else:
+        print("Done.")
 
 
 def enable_all_peers(lab_name: str) -> None:
