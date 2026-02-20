@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
+from ipaddress import ip_network
 from pathlib import Path
 
 import yaml
@@ -115,12 +116,31 @@ def parse_config(path: str) -> LabConfig:
 
     links = []
     for link_entry in raw.get("links", []):
+        cidr = link_entry.get("cidr")
+        raw_devices = link_entry.get("devices", {})
+        sorted_names = sorted(raw_devices.keys())
+
+        host_iter = None
+        prefix_len = None
+        if cidr:
+            network = ip_network(cidr, strict=False)
+            prefix_len = network.prefixlen
+            host_iter = iter(network.hosts())
+
         devices = []
-        for dev_name, dev_data in link_entry["devices"].items():
+        for dev_name in sorted_names:
+            dev_data = raw_devices[dev_name] or {}
+            if "ip" in dev_data:
+                ip = dev_data["ip"]
+            elif host_iter is not None:
+                host_ip = next(host_iter)
+                ip = f"{host_ip}/{prefix_len}"
+            else:
+                raise ValueError(f"Device '{dev_name}' has no IP and link has no cidr")
             devices.append(Device(
                 router=dev_name,
                 interface=dev_data.get("interface"),
-                ip=dev_data["ip"],
+                ip=ip,
             ))
         graph_pos = link_entry.get("graph_pos")
         links.append(Link(devices=devices, graph_pos=graph_pos))

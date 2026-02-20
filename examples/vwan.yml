@@ -64,82 +64,65 @@ routers:
     graph_pos: [125, -150]
 
 links:
-  - devices:
-      prisma-sc-eu-west:
-        interface: eth9
-        ip: 192.168.250.1/24
+  - cidr: 192.168.250.0/24
+    devices:
       prisma-sc-eu-north:
         interface: eth9
-        ip: 192.168.250.2/24
+      prisma-sc-eu-west:
+        interface: eth9
       prisma-sc-us-east:
         interface: eth9
-        ip: 192.168.250.3/24
-  - devices:
-      prisma-sc-eu-west:
-        ip: 192.168.251.1/29
+  - cidr: 192.168.251.0/29
+    devices:
       prisma-mu-eu-west:
-        ip: 192.168.251.2/29
-  - devices:
-      prisma-sc-eu-north:
-        ip: 192.168.251.9/29
-      prisma-mu-eu-north:
-        ip: 192.168.251.10/29
-  - devices:
-      prisma-sc-us-east:
-        ip: 192.168.251.17/29
-      prisma-mu-us-east1:
-        ip: 192.168.251.18/29
-      prisma-mu-us-east2:
-        ip: 192.168.251.19/29
-  - devices:
-      vwan-eu-west:
-        interface: eth9
-        ip: 192.168.240.1/24
-      vwan-eu-north:
-        interface: eth9
-        ip: 192.168.240.2/24
-      vwan-us-west:
-        interface: eth9
-        ip: 192.168.240.3/24
-      vwan-us-east:
-        interface: eth9
-        ip: 192.168.240.4/24
-  - devices:
-      dc-us-east:
-        interface: eth9
-        ip: 192.168.230.1/30
-      dc-eu-west:
-        interface: eth9
-        ip: 192.168.230.2/30
-  - devices:
-      prisma-sc-us-east:
-        ip: 192.168.2.2/30
-      vwan-us-east:
-        ip: 192.168.2.1/30
-  - devices:
       prisma-sc-eu-west:
-        ip: 192.168.2.6/30
-      vwan-eu-west:
-        ip: 192.168.2.5/30
-  - devices:
+  - cidr: 192.168.251.8/29
+    devices:
+      prisma-mu-eu-north:
       prisma-sc-eu-north:
-        ip: 192.168.2.10/30
+  - cidr: 192.168.251.16/29
+    devices:
+      prisma-mu-us-east1:
+      prisma-mu-us-east2:
+      prisma-sc-us-east:
+  - cidr: 192.168.240.0/24
+    devices:
       vwan-eu-north:
-        ip: 192.168.2.9/30
-  - devices:
-      vwan-us-east:
-        ip: 192.168.3.4/29
-      vwan-us-west:
-        ip: 192.168.3.3/29
-      dc-us-east:
-        ip: 192.168.3.1/29
-  - devices:
+        interface: eth9
       vwan-eu-west:
-        ip: 192.168.3.10/29
-      vwan-eu-north:
-        ip: 192.168.3.11/29
+        interface: eth9
+      vwan-us-east:
+        interface: eth9
+      vwan-us-west:
+        interface: eth9
+  - cidr: 192.168.230.0/30
+    devices:
       dc-eu-west:
-        ip: 192.168.3.9/29
+        interface: eth9
+      dc-us-east:
+        interface: eth9
+  - cidr: 192.168.2.0/30
+    devices:
+      prisma-sc-us-east:
+      vwan-us-east:
+  - cidr: 192.168.2.4/30
+    devices:
+      prisma-sc-eu-west:
+      vwan-eu-west:
+  - cidr: 192.168.2.8/30
+    devices:
+      prisma-sc-eu-north:
+      vwan-eu-north:
+  - cidr: 192.168.3.0/29
+    devices:
+      dc-us-east:
+      vwan-us-east:
+      vwan-us-west:
+  - cidr: 192.168.3.8/29
+    devices:
+      dc-eu-west:
+      vwan-eu-north:
+      vwan-eu-west:
 
 bgp:
   # Prisma SC mesh (iBGP)
