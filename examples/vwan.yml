@@ -220,11 +220,11 @@ networks:
       community: "12076:50003"
   dc-eu-west:
     - prefix: 172.18.211.0/24
-      community: "65501:10"
+      community: "65502:20"
     - prefix: 172.18.212.0/24
-      community: "65501:10"
+      community: "65502:20"
   dc-us-east:
     - prefix: 172.18.231.0/24
-      community: "65502:20"
+      community: "65501:10"
     - prefix: 172.18.232.0/24
-      community: "65502:20"
+      community: "65501:10"
